@@ -1,0 +1,163 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:../data/mobills.sqlite"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String        @id @default(cuid())
+  name         String
+  email        String        @unique
+  passwordHash String
+  currency     String        @default("BRL")
+  hideBalances Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  accounts     Account[]
+  creditCards  CreditCard[]
+  categories   Category[]
+  tags         Tag[]
+  transactions Transaction[]
+  budgets      Budget[]
+  goals        Goal[]
+}
+
+model Account {
+  id               String        @id @default(cuid())
+  userId           String
+  name             String
+  institution      String
+  type             String        // checking | savings | wallet | investment | other
+  color            String
+  initialBalance   Float         @default(0)
+  includeInSummary Boolean       @default(true)
+  archived         Boolean       @default(false)
+  createdAt        DateTime      @default(now())
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions     Transaction[]
+  creditCards      CreditCard[]
+}
+
+model CreditCard {
+  id          String        @id @default(cuid())
+  userId      String
+  accountId   String?
+  name        String
+  brand       String        // Mastercard | Visa | Elo | Amex
+  color       String
+  limitAmount Float
+  closingDay  Int
+  dueDay      Int
+  archived    Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account     Account?      @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  invoices    Invoice[]
+  transactions Transaction[]
+}
+
+model Invoice {
+  id           String        @id @default(cuid())
+  creditCardId String
+  month        Int           // 1-12
+  year         Int
+  status       String        @default("open") // open | closed | paid | partial
+  paidAmount   Float         @default(0)
+  paidAt       DateTime?
+  creditCard   CreditCard    @relation(fields: [creditCardId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@unique([creditCardId, month, year])
+}
+
+model Category {
+  id           String        @id @default(cuid())
+  userId       String
+  parentId     String?
+  name         String
+  type         String        // income | expense
+  color        String
+  icon         String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent       Category?     @relation("Subcategories", fields: [parentId], references: [id], onDelete: Cascade)
+  children     Category[]    @relation("Subcategories")
+  transactions Transaction[]
+  budgets      Budget[]
+}
+
+model Tag {
+  id           String        @id @default(cuid())
+  userId       String
+  name         String
+  color        String        @default("#64748B")
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Transaction {
+  id                  String      @id @default(cuid())
+  userId              String
+  accountId           String?
+  destinationAccountId String?
+  creditCardId        String?
+  invoiceId           String?
+  categoryId          String?
+  description         String
+  amount              Float
+  date                String      // YYYY-MM-DD
+  competenceMonth     Int         // 1-12
+  competenceYear      Int
+  type                String      // income | expense | transfer | card_expense
+  status              String      @default("completed") // completed | pending
+  isFixed             Boolean     @default(false)
+  installmentCurrent  Int?
+  installmentTotal    Int?
+  installmentGroupId  String?
+  tagsJson            String      @default("[]")
+  notes               String?
+  createdAt           DateTime    @default(now())
+  user                User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account             Account?    @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  creditCard          CreditCard? @relation(fields: [creditCardId], references: [id], onDelete: SetNull)
+  invoice             Invoice?    @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  category            Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+}
+
+model Budget {
+  id          String   @id @default(cuid())
+  userId      String
+  categoryId  String
+  month       Int
+  year        Int
+  amountLimit Float
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, categoryId, month, year])
+}
+
+model Goal {
+  id            String        @id @default(cuid())
+  userId        String
+  name          String
+  targetAmount  Float
+  initialAmount Float         @default(0)
+  deadline      String        // YYYY-MM-DD
+  color         String
+  icon          String
+  status        String        @default("active") // active | paused | completed
+  createdAt     DateTime      @default(now())
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deposits      GoalDeposit[]
+}
+
+model GoalDeposit {
+  id        String   @id @default(cuid())
+  goalId    String
+  amount    Float
+  date      String   // YYYY-MM-DD
+  note      String?
+  createdAt DateTime @default(now())
+  goal      Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+}

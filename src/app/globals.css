@@ -1,0 +1,213 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --surface-paper: #f8fafc;
+  --surface-elevated: #ffffff;
+  --ink-primary: #0f172a;
+  --ink-secondary: #334155;
+  --ink-muted: #475569;
+  --accent-emerald: #059669;
+  --accent-crimson: #dc2626;
+  --accent-amber: #b45309;
+  --accent-indigo: #4f46e5;
+  --border-subtle: #e2e8f0;
+}
+
+html,
+body {
+  background-color: var(--surface-paper);
+  color: var(--ink-primary);
+  caret-color: var(--accent-emerald);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background-color: #d1fae5;
+  color: #064e3b;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Focus Ring */
+*:focus-visible {
+  outline: 2px solid var(--accent-emerald);
+  outline-offset: 2px;
+}
+
+/* Tabular Numerals for Financial Data */
+.tabular-nums,
+table td,
+table th,
+input[type="number"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Native <dialog> Backdrop & Light-Dismiss Styling (modern-web-guidance: light-dismiss-a-dialog) */
+dialog.mwg-dialog {
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+  padding: 0;
+  background: var(--surface-elevated);
+  color: var(--ink-primary);
+  box-shadow: 0 24px 48px -12px rgba(15, 23, 42, 0.22);
+  max-width: 38rem;
+  width: calc(100% - 2rem);
+  margin: auto;
+}
+
+dialog.mwg-dialog::backdrop {
+  background-color: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(3px);
+}
+
+/* Responsive Semantic Data Table (modern-web-guidance: responsive-table) */
+.table-wrapper {
+  overflow: auto;
+  max-inline-size: 100%;
+  max-block-size: min(620px, 78vh);
+  container-type: inline-size;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.875rem;
+  background: var(--surface-elevated);
+}
+
+.table-wrapper table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  --label-2: "Categoria";
+  --label-3: "Conta / Cartão";
+  --label-4: "Data";
+  --label-5: "Status";
+  --label-6: "Valor";
+}
+
+.table-wrapper thead {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  background: #f1f5f9;
+}
+
+.table-wrapper tbody th {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  background: var(--surface-elevated);
+  text-align: start;
+}
+
+@container (width < 600px) {
+  .table-wrapper table,
+  .table-wrapper thead,
+  .table-wrapper tbody,
+  .table-wrapper tr,
+  .table-wrapper th,
+  .table-wrapper td {
+    display: block;
+  }
+
+  .table-wrapper thead {
+    display: none;
+  }
+
+  .table-wrapper tr {
+    margin-block-end: 1rem;
+    border: 1px solid var(--border-subtle);
+    border-radius: 0.75rem;
+  }
+
+  .table-wrapper tbody th {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 2;
+    background: #f8fafc;
+  }
+
+  .table-wrapper td:nth-child(2)::before {
+    content: var(--label-2) ": ";
+    font-weight: 600;
+    color: var(--ink-secondary);
+  }
+
+  .table-wrapper td:nth-child(3)::before {
+    content: var(--label-3) ": ";
+    font-weight: 600;
+    color: var(--ink-secondary);
+  }
+
+  .table-wrapper td:nth-child(4)::before {
+    content: var(--label-4) ": ";
+    font-weight: 600;
+    color: var(--ink-secondary);
+  }
+
+  .table-wrapper td:nth-child(5)::before {
+    content: var(--label-5) ": ";
+    font-weight: 600;
+    color: var(--ink-secondary);
+  }
+
+  .table-wrapper td:nth-child(6)::before {
+    content: var(--label-6) ": ";
+    font-weight: 600;
+    color: var(--ink-secondary);
+  }
+}
+
+/* Post-Interaction Form Validation (modern-web-guidance: validate-input-after-interaction) */
+.mwg-hint {
+  display: block;
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+  margin-bottom: 0.25rem;
+}
+
+.mwg-error-msg {
+  display: none;
+  color: var(--accent-crimson);
+  font-size: 0.8125rem;
+  margin-top: 0.25rem;
+  font-weight: 500;
+}
+
+.mwg-input:user-invalid,
+.mwg-input.user-invalid-fallback {
+  border-color: var(--accent-crimson);
+  background-color: #fef2f2;
+}
+
+.mwg-input:user-invalid + .mwg-error-msg,
+.mwg-input.user-invalid-fallback + .mwg-error-msg {
+  display: block;
+}
+
+.mwg-input:user-valid,
+.mwg-input.user-valid-fallback {
+  border-color: var(--accent-emerald);
+}
+
+.mwg-field:has(.mwg-input:user-invalid) .mwg-rules-list {
+  color: var(--accent-crimson);
+  font-weight: 600;
+}
