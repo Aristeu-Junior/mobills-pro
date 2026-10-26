@@ -1,5 +1,3 @@
-"use client";
-
 const STORAGE_KEY = "mobills_pro_store_v1";
 
 function uid(prefix = "id"): string {
@@ -457,8 +455,8 @@ export function saveClientStore(data: any) {
 }
 
 export function buildClientSnapshot(store: any, month: number, year: number) {
-  const accountMap = new Map(store.accounts.map((a: any) => [a.id, a]));
-  const catMap = new Map(store.categories.map((c: any) => [c.id, c]));
+  const accountMap = new Map<string, any>(store.accounts.map((a: any) => [a.id, a]));
+  const catMap = new Map<string, any>(store.categories.map((c: any) => [c.id, c]));
 
   // 1. Calculate Account balances
   const accounts = store.accounts.map((acc: any) => {
@@ -523,7 +521,7 @@ export function buildClientSnapshot(store: any, month: number, year: number) {
     };
   });
 
-  const cardMap = new Map(creditCards.map((c: any) => [c.id, c]));
+  const cardMap = new Map<string, any>(creditCards.map((c: any) => [c.id, c]));
 
   // 3. Transactions for current month
   const transactions = store.transactions
@@ -565,7 +563,7 @@ export function buildClientSnapshot(store: any, month: number, year: number) {
   });
 
   // 5. Budgets
-  const catDtoMap = new Map(categories.map((c: any) => [c.id, c]));
+  const catDtoMap = new Map<string, any>(categories.map((c: any) => [c.id, c]));
   const budgets = (store.budgets || [])
     .filter((b: any) => b.month === month && b.year === year)
     .map((b: any) => {
