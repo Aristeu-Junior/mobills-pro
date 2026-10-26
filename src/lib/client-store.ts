@@ -87,11 +87,11 @@ export function getInitialSeedData() {
       },
       {
         id: "acc_inter",
-        name: "Reserva CDB Inter",
+        name: "Conta Inter Principal",
         institution: "Banco Inter",
-        type: "investment",
-        color: "#D97706",
-        initialBalance: 15000.0,
+        type: "checking",
+        color: "#FF7A00",
+        initialBalance: 7850.0,
         includeInSummary: true,
         archived: false,
       },
@@ -107,6 +107,17 @@ export function getInitialSeedData() {
       },
     ],
     creditCards: [
+      {
+        id: "card_inter",
+        accountId: "acc_inter",
+        name: "Inter Mastercard Black",
+        brand: "Mastercard",
+        color: "#FF7A00",
+        limitAmount: 15000.0,
+        closingDay: 20,
+        dueDay: 28,
+        archived: false,
+      },
       {
         id: "card_nubank",
         accountId: "acc_nubank",
@@ -131,6 +142,14 @@ export function getInitialSeedData() {
       },
     ],
     invoices: [
+      {
+        id: "inv_inter_10",
+        creditCardId: "card_inter",
+        month: 10,
+        year: 2026,
+        status: "open",
+        paidAmount: 0,
+      },
       {
         id: "inv_nu_10",
         creditCardId: "card_nubank",

@@ -26,6 +26,47 @@
   --accent-amber: #f59e0b;
   --accent-indigo: #818cf8;
   --border-subtle: #1e293b;
+  color-scheme: dark;
+}
+
+.dark input:not([type="checkbox"]):not([type="radio"]),
+.dark select,
+.dark textarea {
+  background-color: #1e293b;
+  color: #f8fafc;
+  border-color: #334155;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #64748b;
+}
+
+.dark select option {
+  background-color: #0f172a;
+  color: #f8fafc;
+}
+
+.dark label {
+  color: #e2e8f0;
+}
+
+.dark .table-wrapper thead {
+  background: #1e293b;
+}
+
+.dark .table-wrapper tbody th {
+  background: #0f172a;
+}
+
+.dark .table-wrapper tbody tr:hover {
+  background-color: rgba(30, 41, 59, 0.7);
+}
+
+.dark .mwg-dialog {
+  background-color: #0f172a;
+  color: #f8fafc;
+  border-color: #1e293b;
 }
 
 .dark ::selection {

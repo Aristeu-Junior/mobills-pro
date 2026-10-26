@@ -92,7 +92,7 @@ export function LightDismissDialog({
       ref={dialogRef}
       {...({ closedby: "any" } as any)}
       aria-labelledby={titleId}
-      className="mwg-dialog"
+      className="mwg-dialog bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-800"
     >
       <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 px-6 py-4">
         <h2 id={titleId} className="text-lg font-bold text-slate-900 dark:text-slate-100">
