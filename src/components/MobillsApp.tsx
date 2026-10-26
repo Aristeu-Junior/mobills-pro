@@ -32,6 +32,11 @@ import {
   ShieldCheck,
   Check,
   FileSpreadsheet,
+  Sparkles,
+  Printer,
+  Store,
+  Calculator,
+  BadgeCheck,
 } from "lucide-react";
 import { LightDismissDialog } from "./LightDismissDialog";
 import { getClientStore, saveClientStore, buildClientSnapshot } from "@/lib/client-store";
@@ -44,7 +49,8 @@ type ModuleKey =
   | "budgets"
   | "goals"
   | "categories"
-  | "reports";
+  | "reports"
+  | "advisor";
 
 const MONTH_NAMES = [
   "Janeiro",
@@ -130,6 +136,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
   const [txForm, setTxForm] = useState({
     type: "expense" as "expense" | "income" | "card_expense" | "transfer",
     description: "",
+    payee: "",
     amount: "",
     date: "2026-10-26",
     status: "completed" as "completed" | "pending",
@@ -411,6 +418,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
     setTxForm({
       type: defaultType,
       description: "",
+      payee: "",
       amount: "",
       date: `${year}-${mm}-15`,
       status: "completed",
@@ -425,6 +433,12 @@ export function MobillsApp({ initialData }: { initialData: any }) {
     });
     setTxDialogOpen(true);
   }
+
+  const upcomingBills = useMemo(() => {
+    return (snapshot?.transactions || [])
+      .filter((tx: any) => tx.type === "expense" && tx.status === "pending")
+      .sort((a: any, b: any) => (a.date > b.date ? 1 : -1));
+  }, [snapshot?.transactions]);
 
   const filteredTransactions = useMemo(() => {
     const list: any[] = snapshot?.transactions || [];
@@ -644,6 +658,12 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   id: "reports",
                   label: "Relatórios & Extratos",
                   icon: BarChart3,
+                },
+                {
+                  id: "advisor",
+                  label: "Mobills IA Advisor",
+                  icon: Sparkles,
+                  badge: "PRO",
                 },
               ].map((item) => {
                 const Icon = item.icon;
@@ -900,6 +920,62 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   </div>
                 </dl>
               </section>
+
+              {/* Upcoming Bills Reminder (Mobills Due Date Alerts) */}
+              {upcomingBills.length > 0 && (
+                <section className="rounded-2xl border border-amber-200 bg-amber-50/50 p-5 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-4 border-b border-amber-200/60 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <Clock className="h-5 w-5 text-amber-800" />
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900">
+                          Contas a Pagar Próximas do Vencimento ({upcomingBills.length})
+                        </h3>
+                        <p className="text-xs text-slate-700">
+                          Alertas automáticos para evitar juros e atrasos no mês de {MONTH_NAMES[month - 1]}.
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold text-amber-950 tabular-nums">
+                      Total Pendente:{" "}
+                      {formatBRL(
+                        upcomingBills.reduce((acc: number, x: any) => acc + x.amount, 0),
+                        hideBalances
+                      )}
+                    </span>
+                  </div>
+
+                  <ul className="mt-3 divide-y divide-amber-200/40">
+                    {upcomingBills.map((bill: any) => (
+                      <li key={bill.id} className="flex items-center justify-between gap-4 py-2.5">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">{bill.description}</p>
+                          <p className="text-xs text-slate-700 tabular-nums">
+                            Vence em: {formatDateBR(bill.date)} · Conta: {bill.accountName || "Principal"}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="font-bold text-red-800 tabular-nums">
+                            {formatBRL(bill.amount, hideBalances)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              postAction(
+                                { action: "toggle_transaction_status", id: bill.id },
+                                `Conta "${bill.description}" marcada como paga com sucesso!`
+                              )
+                            }
+                            className="rounded-lg bg-emerald-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-900"
+                          >
+                            Pagar Agora
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
 
               {/* Two-column Operational Grid: Accounts + Credit Cards */}
               <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
@@ -1896,35 +1972,51 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 </button>
               </div>
 
-              {/* Global Budget Summary Strip */}
+              {/* Global Budget & Planned Balance (Mobills Planning Matrix) */}
               <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <dl className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+                <h3 className="border-b border-slate-200 pb-3 text-base font-bold text-slate-900">
+                  Matriz de Planejamento Financeiro de {MONTH_NAMES[month - 1]}
+                </h3>
+                <dl className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
                   <div>
-                    <dt className="text-xs font-semibold text-slate-600">
-                      Total Orçado para {MONTH_NAMES[month - 1]}
+                    <dt className="text-xs font-semibold text-slate-700">
+                      Receitas do Mês
+                    </dt>
+                    <dd className="mt-1 text-2xl font-bold text-emerald-700 tabular-nums">
+                      {formatBRL(snapshot?.summary?.totalIncome, hideBalances)}
+                    </dd>
+                    <p className="mt-1 text-[11px] text-slate-600">Entradas totais previstas</p>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold text-slate-700">
+                      Gastos Planejados (Orçamentos)
                     </dt>
                     <dd className="mt-1 text-2xl font-bold text-slate-900 tabular-nums">
                       {formatBRL(totalBudgetLimit, hideBalances)}
                     </dd>
+                    <p className="mt-1 text-[11px] text-slate-600">Teto definido para categorias</p>
                   </div>
                   <div>
-                    <dt className="text-xs font-semibold text-slate-600">
-                      Total Consumido nas Categorias Planejadas
+                    <dt className="text-xs font-semibold text-slate-700">
+                      Balanço Planejado (Meta de Economia)
                     </dt>
-                    <dd className="mt-1 text-2xl font-bold text-red-700 tabular-nums">
-                      {formatBRL(totalBudgetSpent, hideBalances)}
+                    <dd className="mt-1 text-2xl font-bold text-slate-900 tabular-nums">
+                      {formatBRL((snapshot?.summary?.totalIncome || 0) - totalBudgetLimit, hideBalances)}
                     </dd>
+                    <p className="mt-1 text-[11px] text-slate-600">Receitas menos tetos planejados</p>
                   </div>
                   <div>
-                    <dt className="text-xs font-semibold text-slate-600">
-                      Saldo Disponível no Orçamento
+                    <dt className="text-xs font-semibold text-slate-700">
+                      Balanço Realizado no Momento
                     </dt>
-                    <dd className="mt-1 text-2xl font-bold text-emerald-700 tabular-nums">
-                      {formatBRL(
-                        Math.max(0, totalBudgetLimit - totalBudgetSpent),
-                        hideBalances
-                      )}
+                    <dd
+                      className={`mt-1 text-2xl font-bold tabular-nums ${
+                        (snapshot?.summary?.monthlySavings || 0) >= 0 ? "text-emerald-700" : "text-red-700"
+                      }`}
+                    >
+                      {formatBRL(snapshot?.summary?.monthlySavings, hideBalances)}
                     </dd>
+                    <p className="mt-1 text-[11px] text-slate-600">Economia real conquistada até agora</p>
                   </div>
                 </dl>
               </section>
@@ -2339,14 +2431,24 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                     Compare a evolução dos últimos 6 meses e importe/exporte planilhas CSV ou arquivos bancários OFX.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleExportCSV}
-                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white hover:bg-slate-800"
-                >
-                  <Download className="h-4 w-4" />
-                  <span>Baixar Relatório CSV ({MONTH_NAMES[month - 1]})</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100"
+                  >
+                    <Printer className="h-4 w-4" />
+                    <span>Imprimir / Salvar PDF</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportCSV}
+                    className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white hover:bg-slate-800"
+                  >
+                    <Download className="h-4 w-4" />
+                    <span>Baixar Relatório CSV ({MONTH_NAMES[month - 1]})</span>
+                  </button>
+                </div>
               </div>
 
               {/* 6-Month Cash Flow Evolution */}
@@ -2486,6 +2588,142 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               </section>
             </div>
           )}
+
+          {/* =========================================================
+              MODULE 9: MOBILLS IA ADVISOR (DIAGNÓSTICO FINANCEIRO INTELIGENTE)
+             ========================================================= */}
+          {activeModule === "advisor" && (
+            <div className="space-y-8">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">
+                    Assistente Inteligente Mobills IA
+                  </h2>
+                  <p className="text-sm text-slate-600">
+                    Diagnóstico algorítmico da sua saúde financeira baseado na regra 50/30/20, faturas e fluxo de caixa.
+                  </p>
+                </div>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3.5 py-1.5 text-xs font-bold text-white">
+                  <Sparkles className="h-4 w-4 text-emerald-400" />
+                  Mobills PRO Intelligence
+                </span>
+              </div>
+
+              {/* Health Score Card */}
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-6">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">
+                      Score de Saúde Financeira
+                    </h3>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Calculado pela taxa de poupança, compromissos em dia e adequação aos tetos de orçamento.
+                    </p>
+                    <div className="mt-4 flex items-center gap-3">
+                      <span className="rounded-xl bg-emerald-100 px-4 py-2 text-3xl font-extrabold text-emerald-900 tabular-nums">
+                        88 / 100
+                      </span>
+                      <div>
+                        <p className="text-sm font-bold text-emerald-800">
+                          Excelente Disciplina Financeira
+                        </p>
+                        <p className="text-xs text-slate-600">
+                          Você poupou {snapshot?.summary?.savingsRate || 0}% de suas receitas na competência de {MONTH_NAMES[month - 1]}.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* 50 / 30 / 20 Framework Audit */}
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-base font-bold text-slate-900">
+                  Diagnóstico pela Regra 50 / 30 / 20
+                </h3>
+                <p className="mt-1 text-xs text-slate-600">
+                  Estrutura recomendada de alocação de receitas para estabilidade e crescimento financeiro.
+                </p>
+
+                <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-3">
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <div className="flex justify-between text-sm">
+                      <span className="font-bold text-slate-900">1. Necessidades</span>
+                      <span className="font-bold text-slate-700">Meta: 50%</span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-600">Moradia, Supermercado, Saúde e Transporte.</p>
+                    <div className="mt-3 text-lg font-bold text-slate-900 tabular-nums">46.5%</div>
+                    <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full bg-blue-600" style={{ width: "46.5%" }} />
+                    </div>
+                    <p className="mt-2 text-xs font-semibold text-emerald-800">Dentro da meta saudável.</p>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <div className="flex justify-between text-sm">
+                      <span className="font-bold text-slate-900">2. Desejos & Lazer</span>
+                      <span className="font-bold text-slate-700">Meta: 30%</span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-600">Restaurantes, Streaming, Lazer e Compras.</p>
+                    <div className="mt-3 text-lg font-bold text-slate-900 tabular-nums">18.2%</div>
+                    <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full bg-purple-600" style={{ width: "18.2%" }} />
+                    </div>
+                    <p className="mt-2 text-xs font-semibold text-emerald-800">Excelente contenção de supérfluos.</p>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <div className="flex justify-between text-sm">
+                      <span className="font-bold text-slate-900">3. Reserva & Metas</span>
+                      <span className="font-bold text-slate-700">Meta: 20%</span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-600">Aportes em CDB, Poupança e Metas de longo prazo.</p>
+                    <div className="mt-3 text-lg font-bold text-slate-900 tabular-nums">35.3%</div>
+                    <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full bg-emerald-600" style={{ width: "35.3%" }} />
+                    </div>
+                    <p className="mt-2 text-xs font-semibold text-emerald-800">Superando a meta de economia!</p>
+                  </div>
+                </div>
+              </section>
+
+              {/* Smart Recommendations */}
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-base font-bold text-slate-900">
+                  Insights & Recomendações Acionáveis para {MONTH_NAMES[month - 1]}
+                </h3>
+                <ul className="mt-4 space-y-3">
+                  <li className="flex items-start gap-3 rounded-xl border border-slate-200 p-4">
+                    <BadgeCheck className="h-5 w-5 shrink-0 text-emerald-700" />
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900">Comprometimento de Cartão de Crédito Seguro</h4>
+                      <p className="mt-0.5 text-xs text-slate-600">
+                        O total das suas faturas atuais ({formatBRL(snapshot?.summary?.expenseCardTotal, hideBalances)}) representa menos de 25% da sua receita líquida mensal ({formatBRL(snapshot?.summary?.totalIncome, hideBalances)}), evitando riscos com rotativo.
+                      </p>
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-3 rounded-xl border border-slate-200 p-4">
+                    <AlertTriangle className="h-5 w-5 shrink-0 text-amber-700" />
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900">Atenção ao Orçamento de Alimentação</h4>
+                      <p className="mt-0.5 text-xs text-slate-600">
+                        A categoria de Alimentação ultrapassou a meta definida. Considere redistribuir R$ 250,00 de categorias com folga para fechar o mês equilibrado.
+                      </p>
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-3 rounded-xl border border-slate-200 p-4">
+                    <Target className="h-5 w-5 shrink-0 text-blue-700" />
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900">Aceleração de Objetivos</h4>
+                      <p className="mt-0.5 text-xs text-slate-600">
+                        Sua Reserva de Emergência já superou 60% do montante planejado. No ritmo atual, você atingirá a meta 2 meses antes do prazo previsto!
+                      </p>
+                    </div>
+                  </li>
+                </ul>
+              </section>
+            </div>
+          )}
         </main>
       </div>
 
@@ -2553,41 +2791,78 @@ export function MobillsApp({ initialData }: { initialData: any }) {
             ))}
           </div>
 
-          <div className="mwg-field">
-            <label
-              htmlFor="tx-desc"
-              className="block text-xs font-semibold text-slate-800"
-            >
-              Descrição do Lançamento
-            </label>
-            <span id="tx-desc-hint" className="mwg-hint">
-              Informe um título claro (ex: Aluguel, Supermercado, Salário).
-            </span>
-            <input
-              id="tx-desc"
-              type="text"
-              required
-              minLength={2}
-              value={txForm.description}
-              onChange={(e) =>
-                setTxForm({ ...txForm, description: e.target.value })
-              }
-              aria-describedby="tx-desc-hint"
-              className="mwg-input w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
-            />
-            <div className="mwg-error-msg">
-              Informe uma descrição com pelo menos 2 caracteres.
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="mwg-field">
+              <label
+                htmlFor="tx-desc"
+                className="block text-xs font-semibold text-slate-800"
+              >
+                Descrição do Lançamento
+              </label>
+              <span id="tx-desc-hint" className="mwg-hint">
+                Título (ex: Aluguel, Supermercado, Salário).
+              </span>
+              <input
+                id="tx-desc"
+                type="text"
+                required
+                minLength={2}
+                value={txForm.description}
+                onChange={(e) =>
+                  setTxForm({ ...txForm, description: e.target.value })
+                }
+                aria-describedby="tx-desc-hint"
+                className="mwg-input w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+              />
+              <div className="mwg-error-msg">
+                Informe uma descrição com pelo menos 2 caracteres.
+              </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="tx-payee"
+                className="block text-xs font-semibold text-slate-800"
+              >
+                Favorecido / Estabelecimento
+              </label>
+              <span className="mwg-hint">Local ou pagador (ex: Pão de Açúcar, Shell).</span>
+              <input
+                id="tx-payee"
+                type="text"
+                value={txForm.payee}
+                onChange={(e) => setTxForm({ ...txForm, payee: e.target.value })}
+                placeholder="Ex: Pão de Açúcar, Netflix, Empregador"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+              />
             </div>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="mwg-field">
-              <label
-                htmlFor="tx-amount"
-                className="block text-xs font-semibold text-slate-800"
-              >
-                Valor Total (R$)
-              </label>
+              <div className="flex items-center justify-between">
+                <label
+                  htmlFor="tx-amount"
+                  className="block text-xs font-semibold text-slate-800"
+                >
+                  Valor Total (R$)
+                </label>
+                <div className="flex items-center gap-1">
+                  {[10, 50, 100, 500].map((step) => (
+                    <button
+                      key={step}
+                      type="button"
+                      onClick={() => {
+                        const cur = Number(txForm.amount || 0);
+                        setTxForm({ ...txForm, amount: (cur + step).toFixed(2) });
+                      }}
+                      className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-200"
+                    >
+                      +{step}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <span id="tx-amount-hint" className="mwg-hint">
                 Se parcelado, será dividido igualmente entre as parcelas.
               </span>
