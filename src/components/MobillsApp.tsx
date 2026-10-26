@@ -53,8 +53,22 @@ import {
   Percent,
   CheckSquare,
   Square,
+  Bot,
+  Send,
+  MessageSquare,
+  Zap,
+  HelpCircle,
+  AlertOctagon,
 } from "lucide-react";
+import {
+  analyzeFinancialHealth,
+  simulatePurchase,
+  answerConsultantQuestion,
+  PurchaseSimulationResult,
+  ConsultantChatMessage,
+} from "@/lib/financial-advisor";
 import { LightDismissDialog } from "./LightDismissDialog";
+import { AdvisorModule } from "./AdvisorModule";
 import {
   getClientStore,
   saveClientStore,
@@ -137,6 +151,32 @@ export function MobillsApp({ initialData }: { initialData: any }) {
 
   // Dialog states
   const [txDialogOpen, setTxDialogOpen] = useState(false);
+  const [advisorTab, setAdvisorTab] = useState<"chat" | "simulator" | "diagnosis" | "iphone">("chat");
+  const [advisorInput, setAdvisorInput] = useState<string>("");
+  const [advisorMessages, setAdvisorMessages] = useState<ConsultantChatMessage[]>([
+    {
+      id: "init-1",
+      sender: "advisor",
+      text: "👋 Olá! Sou o seu **Consultor Financeiro Pessoal Mobills** com visão 360° da sua carteira.\n\nEstou conectado ao seu **Banco Inter**, contas, cartões e faturas futuras. Posso te dizer se você pode comprar algo agora, calcular o impacto no próximo mês, ou registrar gastos automaticamente por texto ou áudio!\n\n💡 *Experimente perguntar:* **\"Posso comprar um tênis de 400?\"** ou **\"Quanto tenho para pagar mês que vem?\"**",
+      timestamp: "Agora",
+    },
+  ]);
+  const [simForm, setSimForm] = useState<{
+    description: string;
+    amount: number;
+    paymentMethod: "cash" | "card_installments";
+    installmentsCount: number;
+    accountId?: string;
+    cardId?: string;
+  }>({
+    description: "Fone de Ouvido Bluetooth",
+    amount: 380,
+    paymentMethod: "card_installments",
+    installmentsCount: 3,
+    accountId: "",
+    cardId: "",
+  });
+  const [simResult, setSimResult] = useState<PurchaseSimulationResult | null>(null);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [moveCatDialog, setMoveCatDialog] = useState<{
     open: boolean;
@@ -967,7 +1007,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 },
                 {
                   id: "advisor",
-                  label: "Mobills IA Advisor",
+                  label: "🤖 Consultor IA & iPhone",
                   icon: Sparkles,
                   badge: "PRO",
                 },
@@ -1283,6 +1323,61 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               {/* TAB 1: VISÃO GERENCIAL (EXECUTIVE) */}
               {dashTab === "executive" && (
                 <div className="space-y-6">
+                  {/* PROACTIVE FINANCIAL COACH BANNER (IA CONSCIENTE) */}
+                  {(() => {
+                    const health = analyzeFinancialHealth(snapshot);
+                    return (
+                      <section className="relative overflow-hidden rounded-2xl border border-indigo-200/80 dark:border-indigo-800/60 bg-gradient-to-r from-indigo-900/10 via-purple-900/10 to-emerald-900/10 dark:from-indigo-950/40 dark:via-purple-950/30 dark:to-emerald-950/30 p-5 shadow-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-4">
+                          <div className="flex items-start gap-3.5">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white shadow-md">
+                              <Bot className="h-6 w-6" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-400">
+                                  Coach Financeiro Proativo
+                                </span>
+                                <span className="inline-flex items-center rounded-full bg-emerald-100 dark:bg-emerald-900/60 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:text-emerald-300">
+                                  {health.score}/100 • {health.scoreLabel}
+                                </span>
+                              </div>
+                              <p className="mt-0.5 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                Gasto Diário Seguro: <span className="text-emerald-700 dark:text-emerald-400 font-bold tabular-nums">R$ {health.safeToSpendDaily.toFixed(2).replace(".", ",")}/dia</span> até o fim do mês
+                              </p>
+                              <p className="text-xs text-slate-600 dark:text-slate-400">
+                                Faturas e contas futuras mapeadas para o próximo mês: <strong className="text-slate-900 dark:text-slate-200 tabular-nums">R$ {health.nextMonthCommitments.totalEstimated.toFixed(2).replace(".", ",")}</strong>
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveModule("advisor");
+                                setAdvisorTab("simulator");
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-indigo-700 transition-colors"
+                            >
+                              <Zap className="h-3.5 w-3.5 text-amber-300" />
+                              <span>Posso Comprar?</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveModule("advisor");
+                                setAdvisorTab("chat");
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-bold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                            >
+                              <MessageSquare className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                              <span>Conversar com Consultor</span>
+                            </button>
+                          </div>
+                        </div>
+                      </section>
+                    );
+                  })()}
               {/* Executive Ledger Strip (Single cohesive surface, no nested cards) */}
               <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-5">
@@ -3395,139 +3490,27 @@ export function MobillsApp({ initialData }: { initialData: any }) {
           )}
 
           {/* =========================================================
-              MODULE 9: MOBILLS IA ADVISOR (DIAGNÓSTICO FINANCEIRO INTELIGENTE)
+              MODULE 9: MOBILLS IA ADVISOR (CONSULTOR FINANCEIRO & IPHONE/TELEGRAM)
              ========================================================= */}
           {activeModule === "advisor" && (
-            <div className="space-y-8">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-                    Assistente Inteligente Mobills IA
-                  </h2>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                    Diagnóstico algorítmico da sua saúde financeira baseado na regra 50/30/20, faturas e fluxo de caixa.
-                  </p>
-                </div>
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3.5 py-1.5 text-xs font-bold text-white">
-                  <Sparkles className="h-4 w-4 text-emerald-400" />
-                  Mobills PRO Intelligence
-                </span>
-              </div>
-
-              {/* Health Score Card */}
-              <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-6">
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                      Score de Saúde Financeira
-                    </h3>
-                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                      Calculado pela taxa de poupança, compromissos em dia e adequação aos tetos de orçamento.
-                    </p>
-                    <div className="mt-4 flex items-center gap-3">
-                      <span className="rounded-xl bg-emerald-100 dark:bg-emerald-900/60 px-4 py-2 text-3xl font-extrabold text-emerald-900 dark:text-emerald-300 tabular-nums">
-                        88 / 100
-                      </span>
-                      <div>
-                        <p className="text-sm font-bold text-emerald-800 dark:text-emerald-400">
-                          Excelente Disciplina Financeira
-                        </p>
-                        <p className="text-xs text-slate-600 dark:text-slate-400">
-                          Você poupou {snapshot?.summary?.savingsRate || 0}% de suas receitas na competência de {MONTH_NAMES[month - 1]}.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              {/* 50 / 30 / 20 Framework Audit */}
-              <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
-                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                  Diagnóstico pela Regra 50 / 30 / 20
-                </h3>
-                <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                  Estrutura recomendada de alocação de receitas para estabilidade e crescimento financeiro.
-                </p>
-
-                <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-3">
-                  <div className="rounded-xl border border-slate-200 p-4">
-                    <div className="flex justify-between text-sm">
-                      <span className="font-bold text-slate-900 dark:text-slate-100">1. Necessidades</span>
-                      <span className="font-bold text-slate-700 dark:text-slate-300">Meta: 50%</span>
-                    </div>
-                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">Moradia, Supermercado, Saúde e Transporte.</p>
-                    <div className="mt-3 text-lg font-bold text-slate-900 dark:text-slate-100 tabular-nums">46.5%</div>
-                    <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                      <div className="h-full rounded-full bg-blue-600" style={{ width: "46.5%" }} />
-                    </div>
-                    <p className="mt-2 text-xs font-semibold text-emerald-800 dark:text-emerald-400">Dentro da meta saudável.</p>
-                  </div>
-
-                  <div className="rounded-xl border border-slate-200 p-4">
-                    <div className="flex justify-between text-sm">
-                      <span className="font-bold text-slate-900 dark:text-slate-100">2. Desejos & Lazer</span>
-                      <span className="font-bold text-slate-700 dark:text-slate-300">Meta: 30%</span>
-                    </div>
-                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">Restaurantes, Streaming, Lazer e Compras.</p>
-                    <div className="mt-3 text-lg font-bold text-slate-900 dark:text-slate-100 tabular-nums">18.2%</div>
-                    <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                      <div className="h-full rounded-full bg-purple-600" style={{ width: "18.2%" }} />
-                    </div>
-                    <p className="mt-2 text-xs font-semibold text-emerald-800 dark:text-emerald-400">Excelente contenção de supérfluos.</p>
-                  </div>
-
-                  <div className="rounded-xl border border-slate-200 p-4">
-                    <div className="flex justify-between text-sm">
-                      <span className="font-bold text-slate-900 dark:text-slate-100">3. Reserva & Metas</span>
-                      <span className="font-bold text-slate-700 dark:text-slate-300">Meta: 20%</span>
-                    </div>
-                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">Aportes em CDB, Poupança e Metas de longo prazo.</p>
-                    <div className="mt-3 text-lg font-bold text-slate-900 dark:text-slate-100 tabular-nums">35.3%</div>
-                    <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                      <div className="h-full rounded-full bg-emerald-600" style={{ width: "35.3%" }} />
-                    </div>
-                    <p className="mt-2 text-xs font-semibold text-emerald-800 dark:text-emerald-400">Superando a meta de economia!</p>
-                  </div>
-                </div>
-              </section>
-
-              {/* Smart Recommendations */}
-              <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
-                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                  Insights & Recomendações Acionáveis para {MONTH_NAMES[month - 1]}
-                </h3>
-                <ul className="mt-4 space-y-3">
-                  <li className="flex items-start gap-3 rounded-xl border border-slate-200 p-4">
-                    <BadgeCheck className="h-5 w-5 shrink-0 text-emerald-700 dark:text-emerald-400" />
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Comprometimento de Cartão de Crédito Seguro</h4>
-                      <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
-                        O total das suas faturas atuais ({formatBRL(snapshot?.summary?.expenseCardTotal, hideBalances)}) representa menos de 25% da sua receita líquida mensal ({formatBRL(snapshot?.summary?.totalIncome, hideBalances)}), evitando riscos com rotativo.
-                      </p>
-                    </div>
-                  </li>
-                  <li className="flex items-start gap-3 rounded-xl border border-slate-200 p-4">
-                    <AlertTriangle className="h-5 w-5 shrink-0 text-amber-700 dark:text-amber-400" />
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Atenção ao Orçamento de Alimentação</h4>
-                      <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
-                        A categoria de Alimentação ultrapassou a meta definida. Considere redistribuir R$ 250,00 de categorias com folga para fechar o mês equilibrado.
-                      </p>
-                    </div>
-                  </li>
-                  <li className="flex items-start gap-3 rounded-xl border border-slate-200 p-4">
-                    <Target className="h-5 w-5 shrink-0 text-blue-700 dark:text-blue-400" />
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Aceleração de Objetivos</h4>
-                      <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
-                        Sua Reserva de Emergência já superou 60% do montante planejado. No ritmo atual, você atingirá a meta 2 meses antes do prazo previsto!
-                      </p>
-                    </div>
-                  </li>
-                </ul>
-              </section>
-            </div>
+            <AdvisorModule
+              snapshot={snapshot}
+              hideBalances={hideBalances}
+              postAction={postAction}
+              setBannerMessage={setBannerMessage}
+              advisorTab={advisorTab}
+              setAdvisorTab={setAdvisorTab}
+              advisorInput={advisorInput}
+              setAdvisorInput={setAdvisorInput}
+              advisorMessages={advisorMessages}
+              setAdvisorMessages={setAdvisorMessages}
+              simForm={simForm}
+              setSimForm={setSimForm}
+              simResult={simResult}
+              setSimResult={setSimResult}
+              MONTH_NAMES={MONTH_NAMES}
+              formatBRL={formatBRL}
+            />
           )}
         </main>
       </div>
