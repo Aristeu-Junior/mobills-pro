@@ -4,6 +4,55 @@ function uid(prefix = "id"): string {
   return `${prefix}_${Math.random().toString(36).substring(2, 10)}`;
 }
 
+export function getStandardCategories() {
+  return [
+    { id: "cat_sal", parentId: null, name: "Salário", type: "income", color: "#059669", icon: "briefcase" },
+    { id: "cat_free", parentId: null, name: "Projetos & Freelance", type: "income", color: "#0D9488", icon: "laptop" },
+    { id: "cat_div", parentId: null, name: "Rendimentos & Dividendos", type: "income", color: "#2563EB", icon: "trending-up" },
+    { id: "cat_outras_rec", parentId: null, name: "Outras Receitas", type: "income", color: "#10B981", icon: "arrow-down-left" },
+    { id: "cat_house", parentId: null, name: "Moradia", type: "expense", color: "#4F46E5", icon: "home" },
+    { id: "cat_rent", parentId: "cat_house", name: "Aluguel & Condomínio", type: "expense", color: "#4F46E5", icon: "home" },
+    { id: "cat_util", parentId: "cat_house", name: "Energia, Água & Fibra", type: "expense", color: "#4F46E5", icon: "zap" },
+    { id: "cat_food", parentId: null, name: "Alimentação", type: "expense", color: "#E11D48", icon: "utensils" },
+    { id: "cat_market", parentId: "cat_food", name: "Supermercado", type: "expense", color: "#E11D48", icon: "shopping-cart" },
+    { id: "cat_rest", parentId: "cat_food", name: "Restaurantes & Delivery", type: "expense", color: "#E11D48", icon: "utensils" },
+    { id: "cat_trans", parentId: null, name: "Transporte", type: "expense", color: "#D97706", icon: "car" },
+    { id: "cat_fuel", parentId: "cat_trans", name: "Combustível & Pedágio", type: "expense", color: "#D97706", icon: "car" },
+    { id: "cat_uber", parentId: "cat_trans", name: "Apps de Mobilidade", type: "expense", color: "#D97706", icon: "navigation" },
+    { id: "cat_leisure", parentId: null, name: "Lazer & Assinaturas", type: "expense", color: "#7C3AED", icon: "film" },
+    { id: "cat_stream", parentId: "cat_leisure", name: "Streaming & Software", type: "expense", color: "#7C3AED", icon: "tv" },
+    { id: "cat_health", parentId: null, name: "Saúde & Bem-estar", type: "expense", color: "#0891B2", icon: "heart-pulse" },
+    { id: "cat_edu", parentId: null, name: "Educação & Livros", type: "expense", color: "#2563EB", icon: "graduation-cap" },
+    { id: "cat_vestuario", parentId: null, name: "Vestuário & Compras", type: "expense", color: "#DB2777", icon: "shirt" },
+  ];
+}
+
+export function getCleanZeroedData() {
+  return {
+    user: {
+      id: "usr_me",
+      name: "Minha Conta Mobills",
+      email: "minhasfinancas@mobills.app",
+      currency: "BRL",
+      hideBalances: false,
+    },
+    accounts: [],
+    creditCards: [],
+    invoices: [],
+    categories: getStandardCategories(),
+    tags: [
+      { id: "tag_ess", name: "essencial", color: "#0F172A" },
+      { id: "tag_work", name: "trabalho", color: "#2563EB" },
+      { id: "tag_reemb", name: "reembolsavel", color: "#059669" },
+      { id: "tag_fam", name: "familia", color: "#7C3AED" },
+      { id: "tag_sub", name: "assinatura", color: "#D97706" },
+    ],
+    transactions: [],
+    budgets: [],
+    goals: [],
+  };
+}
+
 export function getInitialSeedData() {
   const now = new Date().toISOString();
   return {
@@ -454,6 +503,18 @@ export function saveClientStore(data: any) {
   }
 }
 
+export function clearToZero() {
+  const zeroData = getCleanZeroedData();
+  saveClientStore(zeroData);
+  return zeroData;
+}
+
+export function restoreDemo() {
+  const demoData = getInitialSeedData();
+  saveClientStore(demoData);
+  return demoData;
+}
+
 export function buildClientSnapshot(store: any, month: number, year: number) {
   const accountMap = new Map<string, any>(store.accounts.map((a: any) => [a.id, a]));
   const catMap = new Map<string, any>(store.categories.map((c: any) => [c.id, c]));
@@ -628,13 +689,32 @@ export function buildClientSnapshot(store: any, month: number, year: number) {
     budgets,
     goals,
     tags: store.tags || [],
-    cashFlowHistory: [
-      { label: "Mai/26", month: 5, year: 2026, income: 13600, expenses: 7300, balance: 6300 },
-      { label: "Jun/26", month: 6, year: 2026, income: 14200, expenses: 7720, balance: 6480 },
-      { label: "Jul/26", month: 7, year: 2026, income: 14000, expenses: 8280, balance: 5720 },
-      { label: "Ago/26", month: 8, year: 2026, income: 15400, expenses: 7840, balance: 7560 },
-      { label: "Set/26", month: 9, year: 2026, income: 14700, expenses: 7960, balance: 6740 },
-      { label: "Out/26", month: 10, year: 2026, income: totalIncome, expenses: totalExpenses, balance: totalIncome - totalExpenses },
-    ],
+    cashFlowHistory: (() => {
+      const monthNamesShort = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+      const history = [];
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(year, month - 1 - i, 1);
+        const m = d.getMonth() + 1;
+        const y = d.getFullYear();
+
+        let inc = 0;
+        let exp = 0;
+        for (const tx of store.transactions || []) {
+          if (tx.competenceMonth === m && tx.competenceYear === y) {
+            if (tx.type === "income") inc += Number(tx.amount || 0);
+            else if (tx.type === "expense" || tx.type === "card_expense") exp += Number(tx.amount || 0);
+          }
+        }
+        history.push({
+          label: `${monthNamesShort[m - 1]}/${String(y).slice(2)}`,
+          month: m,
+          year: y,
+          income: Number(inc.toFixed(2)),
+          expenses: Number(exp.toFixed(2)),
+          balance: Number((inc - exp).toFixed(2)),
+        });
+      }
+      return history;
+    })(),
   };
 }

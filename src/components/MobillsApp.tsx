@@ -37,9 +37,23 @@ import {
   Store,
   Calculator,
   BadgeCheck,
+  Edit2,
+  Archive,
+  ArchiveRestore,
+  RotateCcw,
+  RefreshCw,
+  FileText,
+  Calendar,
 } from "lucide-react";
 import { LightDismissDialog } from "./LightDismissDialog";
-import { getClientStore, saveClientStore, buildClientSnapshot } from "@/lib/client-store";
+import {
+  getClientStore,
+  saveClientStore,
+  buildClientSnapshot,
+  getInitialSeedData,
+  clearToZero,
+  restoreDemo,
+} from "@/lib/client-store";
 
 type ModuleKey =
   | "dashboard"
@@ -93,14 +107,28 @@ export function MobillsApp({ initialData }: { initialData: any }) {
     text: string;
   } | null>(null);
 
-  // Transaction Filters
+  // Transaction Filters & Period Presets
   const [txTypeFilter, setTxTypeFilter] = useState<string>("all");
   const [txStatusFilter, setTxStatusFilter] = useState<string>("all");
   const [txCategoryFilter, setTxCategoryFilter] = useState<string>("all");
   const [txSearch, setTxSearch] = useState<string>("");
+  const [txPeriodPreset, setTxPeriodPreset] = useState<"month" | "7d" | "15d" | "30d" | "custom">("month");
+  const [customStartDate, setCustomStartDate] = useState<string>("");
+  const [customEndDate, setCustomEndDate] = useState<string>("");
+
+  // Archive & View Controls
+  const [showArchivedAccounts, setShowArchivedAccounts] = useState<boolean>(false);
+  const [showArchivedCards, setShowArchivedCards] = useState<boolean>(false);
 
   // Dialog states
   const [txDialogOpen, setTxDialogOpen] = useState(false);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [moveCatDialog, setMoveCatDialog] = useState<{
+    open: boolean;
+    sourceCatId: string;
+    sourceCatName: string;
+    targetCatId: string;
+  }>({ open: false, sourceCatId: "", sourceCatName: "", targetCatId: "" });
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [readjustDialog, setReadjustDialog] = useState<{
     open: boolean;
@@ -132,8 +160,9 @@ export function MobillsApp({ initialData }: { initialData: any }) {
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
 
-  // New Transaction Form State
+  // Transaction Form State (Supports Create & Edit)
   const [txForm, setTxForm] = useState({
+    editingId: null as string | null,
     type: "expense" as "expense" | "income" | "card_expense" | "transfer",
     description: "",
     payee: "",
@@ -147,6 +176,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
     isFixed: false,
     installments: "1",
     tagsInput: "",
+    isReimbursable: false,
     notes: "",
   });
 
@@ -386,6 +416,78 @@ export function MobillsApp({ initialData }: { initialData: any }) {
       } else if (action === "create_tag") {
         if (!store.tags) store.tags = [];
         store.tags.push({ id: `tag_${Date.now()}`, name: payload.name.replace(/^#/, ""), color: "#2563EB" });
+      } else if (action === "reset_data") {
+        if (payload.mode === "zero") {
+          store.accounts = [];
+          store.creditCards = [];
+          store.invoices = [];
+          store.transactions = [];
+          store.budgets = [];
+          store.goals = [];
+          store.user.hideBalances = false;
+        } else {
+          const fresh = getInitialSeedData();
+          store.accounts = fresh.accounts;
+          store.creditCards = fresh.creditCards;
+          store.invoices = fresh.invoices;
+          store.transactions = fresh.transactions;
+          store.budgets = fresh.budgets;
+          store.goals = fresh.goals;
+          store.categories = fresh.categories;
+          store.tags = fresh.tags;
+          store.user = fresh.user;
+        }
+      } else if (action === "edit_transaction") {
+        const tx = store.transactions.find((x: any) => x.id === payload.id);
+        if (tx) {
+          tx.description = payload.description;
+          tx.amount = Number(payload.amount);
+          tx.date = payload.date;
+          const parsed = new Date(payload.date || "2026-10-26");
+          tx.competenceMonth = parsed.getMonth() + 1;
+          tx.competenceYear = parsed.getFullYear();
+          tx.type = payload.type;
+          tx.status = payload.status || "completed";
+          tx.accountId = payload.accountId || null;
+          tx.destinationAccountId = payload.destinationAccountId || null;
+          tx.creditCardId = payload.creditCardId || null;
+          tx.categoryId = payload.categoryId || null;
+          tx.isFixed = Boolean(payload.isFixed);
+          tx.tags = payload.tags || [];
+          tx.notes = payload.notes || null;
+        }
+      } else if (action === "reopen_invoice") {
+        const inv = (store.invoices || []).find(
+          (i: any) =>
+            i.id === payload.invoiceId ||
+            (i.creditCardId === payload.creditCardId && i.month === month && i.year === year)
+        );
+        if (inv) {
+          inv.status = "open";
+          inv.paidAmount = 0;
+        }
+      } else if (action === "archive_account") {
+        const acc = store.accounts.find((a: any) => a.id === payload.id);
+        if (acc) acc.archived = !acc.archived;
+      } else if (action === "archive_card") {
+        const c = store.creditCards.find((x: any) => x.id === payload.id);
+        if (c) c.archived = !c.archived;
+      } else if (action === "move_category_transactions") {
+        for (const t of store.transactions) {
+          if (t.categoryId === payload.sourceCategoryId) {
+            t.categoryId = payload.targetCategoryId;
+          }
+        }
+      } else if (action === "delete_account") {
+        store.accounts = store.accounts.filter((a: any) => a.id !== payload.id);
+      } else if (action === "delete_card") {
+        store.creditCards = store.creditCards.filter((c: any) => c.id !== payload.id);
+      } else if (action === "delete_category") {
+        store.categories = store.categories.filter((c: any) => c.id !== payload.id);
+      } else if (action === "delete_budget") {
+        store.budgets = store.budgets.filter((b: any) => b.id !== payload.id);
+      } else if (action === "delete_goal") {
+        store.goals = store.goals.filter((g: any) => g.id !== payload.id);
       }
 
       saveClientStore(store);
@@ -416,6 +518,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
     );
     const mm = String(month).padStart(2, "0");
     setTxForm({
+      editingId: null,
       type: defaultType,
       description: "",
       payee: "",
@@ -429,10 +532,40 @@ export function MobillsApp({ initialData }: { initialData: any }) {
       isFixed: false,
       installments: "1",
       tagsInput: "",
+      isReimbursable: false,
       notes: "",
     });
     setTxDialogOpen(true);
   }
+
+  function openEditTxDialog(tx: any) {
+    setTxForm({
+      editingId: tx.id,
+      type: tx.type,
+      description: tx.description || "",
+      payee: tx.payee || "",
+      amount: String(tx.amount || ""),
+      date: tx.date || `${year}-${String(month).padStart(2, "0")}-15`,
+      status: tx.status || "completed",
+      accountId: tx.accountId || snapshot?.accounts?.[0]?.id || "",
+      destinationAccountId: tx.destinationAccountId || snapshot?.accounts?.[1]?.id || "",
+      creditCardId: tx.creditCardId || snapshot?.creditCards?.[0]?.id || "",
+      categoryId: tx.categoryId || "",
+      isFixed: Boolean(tx.isFixed),
+      installments: String(tx.installmentTotal || "1"),
+      tagsInput: (tx.tags || []).join(", "),
+      isReimbursable: (tx.tags || []).includes("reembolsavel"),
+      notes: tx.notes || "",
+    });
+    setTxDialogOpen(true);
+  }
+
+  const isAccountZeroed = useMemo(() => {
+    return (
+      (snapshot?.accounts || []).length === 0 &&
+      (snapshot?.transactions || []).length === 0
+    );
+  }, [snapshot?.accounts, snapshot?.transactions]);
 
   const upcomingBills = useMemo(() => {
     return (snapshot?.transactions || [])
@@ -441,7 +574,32 @@ export function MobillsApp({ initialData }: { initialData: any }) {
   }, [snapshot?.transactions]);
 
   const filteredTransactions = useMemo(() => {
-    const list: any[] = snapshot?.transactions || [];
+    let list: any[] = snapshot?.transactions || [];
+
+    if (txPeriodPreset === "7d") {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - 7);
+      const isoCutoff = targetDate.toISOString().slice(0, 10);
+      list = list.filter((t: any) => t.date >= isoCutoff);
+    } else if (txPeriodPreset === "15d") {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - 15);
+      const isoCutoff = targetDate.toISOString().slice(0, 10);
+      list = list.filter((t: any) => t.date >= isoCutoff);
+    } else if (txPeriodPreset === "30d") {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - 30);
+      const isoCutoff = targetDate.toISOString().slice(0, 10);
+      list = list.filter((t: any) => t.date >= isoCutoff);
+    } else if (txPeriodPreset === "custom") {
+      if (customStartDate) {
+        list = list.filter((t: any) => t.date >= customStartDate);
+      }
+      if (customEndDate) {
+        list = list.filter((t: any) => t.date <= customEndDate);
+      }
+    }
+
     return list.filter((tx) => {
       if (txTypeFilter !== "all" && tx.type !== txTypeFilter) return false;
       if (txStatusFilter !== "all" && tx.status !== txStatusFilter) return false;
@@ -460,6 +618,9 @@ export function MobillsApp({ initialData }: { initialData: any }) {
     });
   }, [
     snapshot?.transactions,
+    txPeriodPreset,
+    customStartDate,
+    customEndDate,
     txTypeFilter,
     txStatusFilter,
     txCategoryFilter,
@@ -4146,6 +4307,152 @@ export function MobillsApp({ initialData }: { initialData: any }) {
             </form>
           )}
         </div>
+      </LightDismissDialog>
+
+      {/* =========================================================
+          DIALOG 10: GERENCIAR DADOS (ZERAR TUDO / RESTAURAR DEMO)
+         ========================================================= */}
+      <LightDismissDialog
+        open={resetDialogOpen}
+        onClose={() => setResetDialogOpen(false)}
+        title="Gerenciar Dados: Início Limpo ou Demonstração"
+      >
+        <div className="space-y-4">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-800" />
+              <div>
+                <h3 className="text-sm font-bold text-amber-950">
+                  Deseja zerar os dados para preencher com suas finanças reais?
+                </h3>
+                <p className="mt-1 text-xs leading-relaxed text-amber-900">
+                  Ao clicar em <strong>&ldquo;Zerar Tudo (Começar Limpo)&rdquo;</strong>, todas as contas bancárias, cartões de crédito, lançamentos e metas de exemplo serão removidos.
+                  Suas categorias essenciais do Mobills serão preservadas para que você possa lançar seus dados reais imediatamente.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <h4 className="text-xs font-bold text-slate-900">Escolha uma ação:</h4>
+            <div className="mt-3 flex flex-col gap-2.5">
+              <button
+                type="button"
+                onClick={async () => {
+                  const ok = await postAction(
+                    { action: "reset_data", mode: "zero" },
+                    "Todos os dados foram zerados. Sua conta está limpa para uso real!"
+                  );
+                  if (ok) setResetDialogOpen(false);
+                }}
+                className="flex items-center justify-between rounded-xl border border-red-300 bg-white p-3.5 text-left transition hover:border-red-500 hover:bg-red-50/50"
+              >
+                <div>
+                  <p className="text-xs font-bold text-red-900">Zerar Tudo (Início Limpo)</p>
+                  <p className="text-[11px] text-slate-600">Remove todas as contas, cartões, faturas e lançamentos de exemplo.</p>
+                </div>
+                <Trash2 className="h-4 w-4 shrink-0 text-red-700" />
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  const ok = await postAction(
+                    { action: "reset_data", mode: "demo" },
+                    "Dados de demonstração do Mobills restaurados com sucesso."
+                  );
+                  if (ok) setResetDialogOpen(false);
+                }}
+                className="flex items-center justify-between rounded-xl border border-slate-300 bg-white p-3.5 text-left transition hover:border-slate-500 hover:bg-slate-100/50"
+              >
+                <div>
+                  <p className="text-xs font-bold text-slate-900">Restaurar Dados de Exemplo (Demonstração)</p>
+                  <p className="text-[11px] text-slate-600">Recarrega contas, faturas e lançamentos de exemplo para testes.</p>
+                </div>
+                <RotateCcw className="h-4 w-4 shrink-0 text-slate-700" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="button"
+              onClick={() => setResetDialogOpen(false)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </LightDismissDialog>
+
+      {/* =========================================================
+          DIALOG 11: MOVER LANÇAMENTOS ENTRE CATEGORIAS
+         ========================================================= */}
+      <LightDismissDialog
+        open={moveCatDialog.open}
+        onClose={() => setMoveCatDialog({ open: false, sourceCatId: "", sourceCatName: "", targetCatId: "" })}
+        title="Mover Lançamentos entre Categorias"
+      >
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!moveCatDialog.targetCatId) return;
+            const ok = await postAction(
+              {
+                action: "move_category_transactions",
+                sourceCategoryId: moveCatDialog.sourceCatId,
+                targetCategoryId: moveCatDialog.targetCatId,
+              },
+              "Lançamentos movidos com sucesso para a nova categoria."
+            );
+            if (ok) {
+              setMoveCatDialog({ open: false, sourceCatId: "", sourceCatName: "", targetCatId: "" });
+            }
+          }}
+          className="space-y-4"
+        >
+          <p className="text-xs leading-relaxed text-slate-700">
+            Você está transferindo todos os lançamentos de <strong>{moveCatDialog.sourceCatName}</strong> para outra categoria:
+          </p>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-800">
+              Categoria de Destino
+            </label>
+            <select
+              value={moveCatDialog.targetCatId}
+              onChange={(e) => setMoveCatDialog({ ...moveCatDialog, targetCatId: e.target.value })}
+              required
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+            >
+              <option value="">Selecione a categoria de destino...</option>
+              {(snapshot?.categories || [])
+                .filter((c: any) => c.id !== moveCatDialog.sourceCatId)
+                .map((c: any) => (
+                  <option key={c.id} value={c.id}>
+                    {c.parentName ? `${c.parentName} › ${c.name}` : c.name} ({c.type === "income" ? "Receita" : "Despesa"})
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          <div className="flex justify-end gap-2 border-t border-slate-200 pt-3">
+            <button
+              type="button"
+              onClick={() => setMoveCatDialog({ open: false, sourceCatId: "", sourceCatName: "", targetCatId: "" })}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="rounded-lg bg-emerald-700 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-800"
+            >
+              Mover Lançamentos
+            </button>
+          </div>
+        </form>
       </LightDismissDialog>
     </div>
   );

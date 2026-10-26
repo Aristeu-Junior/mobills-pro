@@ -439,6 +439,92 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, importedCount: count });
     }
 
+    if (action === "reset_data") {
+      const mode = body.mode || "zero";
+      if (mode === "zero") {
+        db.prepare("DELETE FROM TransactionRecord WHERE userId = ?").run(userId);
+        db.prepare("DELETE FROM GoalDeposit WHERE goalId IN (SELECT id FROM Goal WHERE userId = ?)").run(userId);
+        db.prepare("DELETE FROM Goal WHERE userId = ?").run(userId);
+        db.prepare("DELETE FROM Budget WHERE userId = ?").run(userId);
+        db.prepare("DELETE FROM Invoice WHERE creditCardId IN (SELECT id FROM CreditCard WHERE userId = ?)").run(userId);
+        db.prepare("DELETE FROM CreditCard WHERE userId = ?").run(userId);
+        db.prepare("DELETE FROM Account WHERE userId = ?").run(userId);
+      } else {
+        seedUserDefaults(db, userId, true);
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    if (action === "edit_transaction") {
+      const { id, description, amount, date, type, status, accountId, destinationAccountId, creditCardId, categoryId, isFixed, tags, notes } = body;
+      const parsedDate = new Date(date || "2026-10-26");
+      const compMonth = parsedDate.getMonth() + 1;
+      const compYear = parsedDate.getFullYear();
+
+      db.prepare(`
+        UPDATE TransactionRecord SET
+          description = ?,
+          amount = ?,
+          date = ?,
+          competenceMonth = ?,
+          competenceYear = ?,
+          type = ?,
+          status = ?,
+          accountId = ?,
+          destinationAccountId = ?,
+          creditCardId = ?,
+          categoryId = ?,
+          isFixed = ?,
+          tagsJson = ?,
+          notes = ?
+        WHERE id = ? AND userId = ?
+      `).run(
+        String(description || "Lançamento"),
+        Math.abs(Number(amount || 0)),
+        String(date || "2026-10-26"),
+        compMonth,
+        compYear,
+        type,
+        status || "completed",
+        accountId || null,
+        destinationAccountId || null,
+        creditCardId || null,
+        categoryId || null,
+        isFixed ? 1 : 0,
+        JSON.stringify(Array.isArray(tags) ? tags : []),
+        notes || null,
+        id,
+        userId
+      );
+      return NextResponse.json({ ok: true });
+    }
+
+    if (action === "reopen_invoice") {
+      const { invoiceId, creditCardId, month, year } = body;
+      if (invoiceId) {
+        db.prepare("UPDATE Invoice SET status = 'open', paidAmount = 0, paidAt = NULL WHERE id = ?").run(invoiceId);
+      } else if (creditCardId && month && year) {
+        db.prepare("UPDATE Invoice SET status = 'open', paidAmount = 0, paidAt = NULL WHERE creditCardId = ? AND month = ? AND year = ?").run(creditCardId, Number(month), Number(year));
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    if (action === "archive_account") {
+      db.prepare("UPDATE Account SET archived = CASE WHEN archived = 1 THEN 0 ELSE 1 END WHERE id = ? AND userId = ?").run(body.id, userId);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (action === "archive_card") {
+      db.prepare("UPDATE CreditCard SET archived = CASE WHEN archived = 1 THEN 0 ELSE 1 END WHERE id = ? AND userId = ?").run(body.id, userId);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (action === "move_category_transactions") {
+      const { sourceCategoryId, targetCategoryId } = body;
+      db.prepare("UPDATE TransactionRecord SET categoryId = ? WHERE categoryId = ? AND userId = ?").run(targetCategoryId, sourceCategoryId, userId);
+      return NextResponse.json({ ok: true });
+    }
+
     return NextResponse.json({ error: "Ação desconhecida." }, { status: 400 });
   } catch (err: any) {
     return NextResponse.json(
