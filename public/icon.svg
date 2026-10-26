@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#059669" />
+      <stop offset="100%" stop-color="#047857" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#090d16" />
+  <rect x="36" y="36" width="440" height="440" rx="96" fill="url(#grad)" />
+  <!-- Wallet Glyph -->
+  <path d="M380 180V140C380 120 364 104 344 104H148C128 104 112 120 112 140V372C112 392 128 408 148 408H344C364 408 380 392 380 372V332" stroke="#ffffff" stroke-width="28" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <rect x="290" y="210" width="130" height="92" rx="20" fill="#090d16" stroke="#ffffff" stroke-width="24" />
+  <circle cx="340" cy="256" r="16" fill="#10b981" />
+</svg>

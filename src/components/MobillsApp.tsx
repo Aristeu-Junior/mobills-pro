@@ -46,6 +46,13 @@ import {
   Calendar,
   Sun,
   Moon,
+  Smartphone,
+  FileUp,
+  Paperclip,
+  Image as ImageIcon,
+  Percent,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import { LightDismissDialog } from "./LightDismissDialog";
 import {
@@ -58,6 +65,7 @@ import {
   isStoreZeroed,
   ONBOARDING_CHOICE_KEY,
 } from "@/lib/client-store";
+import { parseOFX, parseCSV, detectCategory, ImportedTransaction } from "@/lib/bank-importer";
 
 type ModuleKey =
   | "dashboard"
@@ -165,6 +173,25 @@ export function MobillsApp({ initialData }: { initialData: any }) {
     goalName: string;
   }>({ open: false, goalId: "", goalName: "" });
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
+  // Superpowers States: OFX/CSV Importer, PWA, Report PDF & Simulator
+  const [importDialogOpen, setImportDialogOpen] = useState<boolean>(false);
+  const [importTargetAccount, setImportTargetAccount] = useState<string>(initialData?.accounts?.[0]?.id || "");
+  const [importedList, setImportedList] = useState<ImportedTransaction[]>([]);
+  const [importFileName, setImportFileName] = useState<string>("");
+  const [isParsingFile, setIsParsingFile] = useState<boolean>(false);
+  const [reportModalOpen, setReportModalOpen] = useState<boolean>(false);
+  const [attachmentModal, setAttachmentModal] = useState<{ open: boolean; url: string; title: string }>({
+    open: false,
+    url: "",
+    title: "",
+  });
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallBanner, setShowInstallBanner] = useState<boolean>(false);
+
+  // Investment Simulator State (Banco Inter CDB/LCI vs Poupança)
+  const [simInitial, setSimInitial] = useState<string>("5000");
+  const [simMonthly, setSimMonthly] = useState<string>("500");
+  const [simMonths, setSimMonths] = useState<number>(12);
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
 
   // Transaction Form State (Supports Create & Edit)
@@ -185,6 +212,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
     tagsInput: "",
     isReimbursable: false,
     notes: "",
+    attachment: null as string | null,
   });
 
   // New Account Form State
@@ -285,7 +313,20 @@ export function MobillsApp({ initialData }: { initialData: any }) {
       const store = getClientStore();
       setSnapshot(buildClientSnapshot(store, month, year));
 
-      // 3. Check first-run onboarding
+      // PWA Service Worker registration
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js").catch(() => {});
+    }
+
+    const handleBeforeInstall = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowInstallBanner(true);
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
+
+    // 3. Check first-run onboarding
       const savedChoice = localStorage.getItem(ONBOARDING_CHOICE_KEY);
       if (!savedChoice) {
         setWelcomeModalOpen(true);
@@ -378,7 +419,34 @@ export function MobillsApp({ initialData }: { initialData: any }) {
     try {
       const store = getClientStore();
       const { action } = payload;
-      if (action === "create_transaction") {
+      if (action === "import_transactions") {
+        for (const item of payload.transactions || []) {
+          const parsed = new Date(item.date || `${year}-${String(month).padStart(2, "0")}-01`);
+          const compMonth = isNaN(parsed.getMonth()) ? month : parsed.getMonth() + 1;
+          const compYear = isNaN(parsed.getFullYear()) ? year : parsed.getFullYear();
+          store.transactions.unshift({
+            id: `tx_imp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            description: item.description,
+            amount: Number(item.amount),
+            date: item.date,
+            competenceMonth: compMonth,
+            competenceYear: compYear,
+            type: item.type || "expense",
+            status: "completed",
+            accountId: payload.accountId || null,
+            destinationAccountId: null,
+            creditCardId: null,
+            categoryId: item.categoryId || null,
+            isFixed: false,
+            installmentCurrent: null,
+            installmentTotal: null,
+            installmentGroupId: null,
+            tags: ["extrato", "importado"],
+            notes: "Importado via Extrato Bancário",
+            attachment: null,
+          });
+        }
+      } else if (action === "create_transaction") {
         store.transactions.unshift({
           id: `tx_${Date.now()}`,
           description: payload.description,
@@ -398,6 +466,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
           installmentGroupId: null,
           tags: payload.tags || [],
           notes: payload.notes || null,
+          attachment: payload.attachment || null,
         });
       } else if (action === "toggle_transaction_status") {
         const t = store.transactions.find((x: any) => x.id === payload.id);
@@ -528,6 +597,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
           tx.isFixed = Boolean(payload.isFixed);
           tx.tags = payload.tags || [];
           tx.notes = payload.notes || null;
+          if (payload.attachment !== undefined) tx.attachment = payload.attachment;
         }
       } else if (action === "reopen_invoice") {
         const inv = (store.invoices || []).find(
@@ -607,6 +677,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
       tagsInput: "",
       isReimbursable: false,
       notes: "",
+      attachment: null,
     });
     setTxDialogOpen(true);
   }
@@ -629,6 +700,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
       tagsInput: (tx.tags || []).join(", "),
       isReimbursable: (tx.tags || []).includes("reembolsavel"),
       notes: tx.notes || "",
+      attachment: tx.attachment || null,
     });
     setTxDialogOpen(true);
   }
@@ -1074,6 +1146,25 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 </>
               )}
             </button>
+            {/* PWA Install Button */}
+            <button
+              type="button"
+              onClick={() => {
+                if (deferredPrompt) {
+                  deferredPrompt.prompt();
+                } else {
+                  alert(
+                    "Para instalar no celular:\n\n📱 iPhone/iPad: Toque no botão Compartilhar do Safari e selecione 'Adicionar à Tela de Início'.\n\n🤖 Android/Chrome: Toque nos 3 pontos do menu e selecione 'Instalar aplicativo'."
+                  );
+                }
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 transition-colors hover:bg-slate-100 dark:hover:bg-slate-700"
+              title="Instalar Mobills Pro no Celular ou Desktop"
+            >
+              <Smartphone className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              <span className="hidden md:inline">Instalar App</span>
+            </button>
+
             {/* Dark Mode Theme Toggle */}
             <button
               type="button"
@@ -1890,6 +1981,14 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    onClick={() => setImportDialogOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-600 dark:border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 px-3.5 py-2 text-xs font-bold text-emerald-900 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900 shadow-sm"
+                  >
+                    <FileUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>Importar Extrato (OFX/CSV)</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleExportCSV}
                     className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
                   >
@@ -2030,6 +2129,23 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                             <div className="flex flex-col gap-1">
                               <div className="flex items-center gap-2">
                                 <span>{tx.description}</span>
+                                {tx.attachment && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setAttachmentModal({
+                                        open: true,
+                                        url: tx.attachment,
+                                        title: tx.description,
+                                      })
+                                    }
+                                    className="inline-flex items-center gap-1 rounded bg-emerald-100 dark:bg-emerald-900/60 px-1.5 py-0.5 text-[11px] font-bold text-emerald-900 dark:text-emerald-200 hover:bg-emerald-200"
+                                    title="Ver comprovante anexado"
+                                  >
+                                    <Paperclip className="h-3 w-3" />
+                                    <span>Comprovante</span>
+                                  </button>
+                                )}
                                 {tx.isFixed && (
                                   <span className="inline-flex items-center gap-1 rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[11px] font-medium text-slate-700 dark:text-slate-300">
                                     <Repeat className="h-3 w-3" /> Fixa
@@ -2664,6 +2780,144 @@ export function MobillsApp({ initialData }: { initialData: any }) {
              ========================================================= */}
           {activeModule === "goals" && (
             <div className="space-y-6">
+              {/* Simulador de Rendimentos Banco Inter (CDB & LCI vs Poupança) */}
+              <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-100 dark:bg-orange-950/60 text-[#FF7A00]">
+                      <Percent className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                        Simulador de Rendimento Banco Inter (CDB & LCI vs. Poupança)
+                      </h3>
+                      <p className="text-xs text-slate-600 dark:text-slate-400">
+                        Simule o rendimento da sua reserva financeira no Inter e descubra quanto ganha a mais em relação à poupança.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="rounded-full bg-orange-50 dark:bg-orange-950/60 border border-orange-200 dark:border-orange-800 px-3 py-1 text-xs font-bold text-[#FF7A00]">
+                    Selic 10,75% a.a.
+                  </span>
+                </div>
+
+                <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      Investimento Inicial (R$)
+                    </label>
+                    <input
+                      type="number"
+                      step="100"
+                      value={simInitial}
+                      onChange={(e) => setSimInitial(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      Aporte Mensal (R$)
+                    </label>
+                    <input
+                      type="number"
+                      step="50"
+                      value={simMonthly}
+                      onChange={(e) => setSimMonthly(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      Prazo de Aplicação
+                    </label>
+                    <div className="mt-1 flex gap-1.5">
+                      {[6, 12, 24, 36].map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setSimMonths(m)}
+                          className={`flex-1 rounded-lg py-2 text-xs font-bold transition ${
+                            simMonths === m
+                              ? "bg-[#FF7A00] text-white shadow-sm"
+                              : "border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                          }`}
+                        >
+                          {m}m
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {(() => {
+                  const p0 = parseFloat(simInitial) || 0;
+                  const pm = parseFloat(simMonthly) || 0;
+                  const n = simMonths;
+                  const totalInvested = p0 + pm * n;
+
+                  const rCdbMonth = 0.0085;
+                  const rLciMonth = 0.0076;
+                  const rPoupMonth = 0.0050;
+
+                  const fvPoup = p0 * Math.pow(1 + rPoupMonth, n) + (pm > 0 ? pm * ((Math.pow(1 + rPoupMonth, n) - 1) / rPoupMonth) : 0);
+                  const fvLci = p0 * Math.pow(1 + rLciMonth, n) + (pm > 0 ? pm * ((Math.pow(1 + rLciMonth, n) - 1) / rLciMonth) : 0);
+                  
+                  const fvCdbGross = p0 * Math.pow(1 + rCdbMonth, n) + (pm > 0 ? pm * ((Math.pow(1 + rCdbMonth, n) - 1) / rCdbMonth) : 0);
+                  const cdbProfit = Math.max(0, fvCdbGross - totalInvested);
+                  const irRate = n <= 6 ? 0.225 : n <= 12 ? 0.20 : n <= 24 ? 0.175 : 0.15;
+                  const fvCdbNet = totalInvested + cdbProfit * (1 - irRate);
+                  const extraCdb = fvCdbNet - fvPoup;
+
+                  return (
+                    <div className="mt-5 space-y-4">
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                        <div className="rounded-2xl border border-orange-300 dark:border-orange-800 bg-orange-50/60 dark:bg-orange-950/30 p-4">
+                          <span className="text-xs font-bold text-orange-900 dark:text-orange-300">
+                            CDB Banco Inter (100% CDI)
+                          </span>
+                          <p className="mt-2 text-xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                            {formatBRL(fvCdbNet)}
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-400">
+                            Líquido com IR deduzido · Liquidez Diária
+                          </p>
+                        </div>
+
+                        <div className="rounded-2xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50/60 dark:bg-emerald-950/30 p-4">
+                          <span className="text-xs font-bold text-emerald-900 dark:text-emerald-300">
+                            LCI Banco Inter (Isenta de IR)
+                          </span>
+                          <p className="mt-2 text-xl font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                            {formatBRL(fvLci)}
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-400">
+                            Zero Imposto de Renda · FGC até R$ 250k
+                          </p>
+                        </div>
+
+                        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 p-4">
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                            Poupança Tradicional
+                          </span>
+                          <p className="mt-2 text-xl font-bold text-slate-600 dark:text-slate-300 tabular-nums">
+                            {formatBRL(fvPoup)}
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                            Rendimento de apenas 0,5% a.m. + TR
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-emerald-100 dark:bg-emerald-900/60 px-4 py-3 text-xs font-semibold text-emerald-900 dark:text-emerald-200">
+                        <span>Ganho extra no Banco Inter comparado à Poupança em {n} meses:</span>
+                        <span className="text-sm font-extrabold tabular-nums">
+                          +{formatBRL(extraCdb)} de rentabilidade a mais
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </section>
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
@@ -2985,11 +3239,19 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   </button>
                   <button
                     type="button"
+                    onClick={() => setReportModalOpen(true)}
+                    className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white hover:bg-emerald-800 shadow-sm"
+                  >
+                    <FileText className="h-4 w-4" />
+                    <span>Extrato Oficial em PDF</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleExportCSV}
-                    className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white hover:bg-slate-800"
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
                   >
                     <Download className="h-4 w-4" />
-                    <span>Baixar Relatório CSV ({MONTH_NAMES[month - 1]})</span>
+                    <span>Baixar CSV</span>
                   </button>
                 </div>
               </div>
@@ -3647,6 +3909,70 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               </div>
             </div>
           )}
+
+          {/* Attachment upload */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200">
+              Comprovante / Recibo Anexo (Foto ou Print)
+            </label>
+            <div className="mt-1.5 flex items-center gap-3">
+              {txForm.attachment ? (
+                <div className="flex items-center gap-2 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 p-2">
+                  <ImageIcon className="h-5 w-5 text-emerald-700 dark:text-emerald-400 shrink-0" />
+                  <span className="text-xs font-bold text-emerald-900 dark:text-emerald-200">
+                    Comprovante Anexado
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setTxForm({ ...txForm, attachment: null })}
+                    className="ml-2 rounded p-1 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-950/60"
+                    title="Remover anexo"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">
+                  <Paperclip className="h-4 w-4 text-emerald-600" />
+                  <span>Anexar Comprovante Pix / Nota Fiscal</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        const img = new Image();
+                        img.onload = () => {
+                          const canvas = document.createElement("canvas");
+                          const maxDim = 800;
+                          let width = img.width;
+                          let height = img.height;
+                          if (width > height && width > maxDim) {
+                            height = Math.round((height * maxDim) / width);
+                            width = maxDim;
+                          } else if (height > maxDim) {
+                            width = Math.round((width * maxDim) / height);
+                            height = maxDim;
+                          }
+                          canvas.width = width;
+                          canvas.height = height;
+                          const ctx = canvas.getContext("2d");
+                          ctx?.drawImage(img, 0, 0, width, height);
+                          const compressed = canvas.toDataURL("image/jpeg", 0.75);
+                          setTxForm((prev) => ({ ...prev, attachment: compressed }));
+                        };
+                        img.src = event.target?.result as string;
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                </label>
+              )}
+            </div>
+          </div>
 
           <div className="flex items-center gap-2 pt-1">
             <input
@@ -5054,6 +5380,359 @@ export function MobillsApp({ initialData }: { initialData: any }) {
           <p className="text-center text-[11px] text-slate-500 dark:text-slate-400">
             Você poderá alternar entre o Modo Limpo e o Modo Demonstração a qualquer momento pelo botão no topo da tela.
           </p>
+        </div>
+      </LightDismissDialog>
+
+      {/* =========================================================
+          DIALOG 14: IMPORTADOR DE EXTRATO BANCÁRIO (OFX / CSV)
+         ========================================================= */}
+      <LightDismissDialog
+        open={importDialogOpen}
+        onClose={() => setImportDialogOpen(false)}
+        title="Importar Extrato Bancário (OFX / CSV)"
+      >
+        <div className="space-y-5">
+          <div className="rounded-2xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/40 p-4">
+            <div className="flex items-start gap-3">
+              <FileUp className="h-5 w-5 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  Importação Automática do Banco Inter, Nubank e outros bancos
+                </h4>
+                <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                  Baixe o extrato no formato <strong>.OFX</strong> ou <strong>.CSV</strong> do internet banking e selecione abaixo. As compras serão categorizadas automaticamente com base na descrição (Uber, iFood, Farmácia, Salário, etc.).
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200">
+                Conta de Destino no Mobills
+              </label>
+              <select
+                value={importTargetAccount}
+                onChange={(e) => setImportTargetAccount(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
+              >
+                {(snapshot?.accounts || []).map((acc: any) => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.name} ({acc.institution})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200">
+                Arquivo do Extrato (.OFX ou .CSV)
+              </label>
+              <label className="mt-1 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
+                <FileUp className="h-4 w-4 text-emerald-600" />
+                <span className="truncate">{importFileName || "Selecionar arquivo..."}</span>
+                <input
+                  type="file"
+                  accept=".ofx,.csv,.txt"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setImportFileName(file.name);
+                    setIsParsingFile(true);
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                      const text = event.target?.result as string;
+                      let parsed: ImportedTransaction[] = [];
+                      if (file.name.toLowerCase().endsWith(".ofx") || text.includes("<OFX>") || text.includes("<STMTTRN>")) {
+                        parsed = parseOFX(text);
+                      } else {
+                        parsed = parseCSV(text);
+                      }
+                      setImportedList(parsed);
+                      setIsParsingFile(false);
+                    };
+                    reader.readAsText(file, "utf-8");
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* Preview list */}
+          {importedList.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  {importedList.filter((x) => x.selected).length} de {importedList.length} lançamentos selecionados
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const allSelected = importedList.every((x) => x.selected);
+                    setImportedList((prev) => prev.map((x) => ({ ...x, selected: !allSelected })));
+                  }}
+                  className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline"
+                >
+                  {importedList.every((x) => x.selected) ? "Desmarcar Todos" : "Marcar Todos"}
+                </button>
+              </div>
+
+              <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                {importedList.map((tx, idx) => (
+                  <div
+                    key={tx.id}
+                    className={`flex items-center justify-between gap-3 rounded-xl border p-2.5 text-xs transition ${
+                      tx.selected
+                        ? "border-emerald-300 dark:border-emerald-800 bg-white dark:bg-slate-900"
+                        : "border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 opacity-60"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={tx.selected}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setImportedList((prev) =>
+                            prev.map((item, i) => (i === idx ? { ...item, selected: checked } : item))
+                          );
+                        }}
+                        className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate font-bold text-slate-900 dark:text-slate-100">
+                          {tx.description}
+                        </p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+                          {formatDateBR(tx.date)} · Sugerido: {tx.categoryName}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <select
+                        value={tx.categoryId}
+                        onChange={(e) => {
+                          const catId = e.target.value;
+                          const found = (snapshot?.categories || []).find((c: any) => c.id === catId);
+                          setImportedList((prev) =>
+                            prev.map((item, i) =>
+                              i === idx ? { ...item, categoryId: catId, categoryName: found?.name || item.categoryName } : item
+                            )
+                          );
+                        }}
+                        className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 py-1 px-2 text-[11px] text-slate-800 dark:text-slate-200"
+                      >
+                        {(snapshot?.categories || []).map((c: any) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                      <span
+                        className={`font-bold tabular-nums ${
+                          tx.type === "income" ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"
+                        }`}
+                      >
+                        {tx.type === "income" ? "+" : "-"}
+                        {formatBRL(tx.amount)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 border-t border-slate-200 dark:border-slate-800 pt-4">
+            <button
+              type="button"
+              onClick={() => {
+                setImportDialogOpen(false);
+                setImportedList([]);
+                setImportFileName("");
+              }}
+              className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={importedList.filter((x) => x.selected).length === 0}
+              onClick={async () => {
+                const selectedTxs = importedList.filter((x) => x.selected);
+                const ok = await postAction(
+                  {
+                    action: "import_transactions",
+                    accountId: importTargetAccount || snapshot?.accounts?.[0]?.id,
+                    transactions: selectedTxs,
+                  },
+                  `${selectedTxs.length} lançamentos importados com sucesso para o seu extrato!`
+                );
+                if (ok) {
+                  setImportDialogOpen(false);
+                  setImportedList([]);
+                  setImportFileName("");
+                }
+              }}
+              className="rounded-lg bg-emerald-700 px-5 py-2 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50 shadow-sm"
+            >
+              Importar {importedList.filter((x) => x.selected).length} Lançamentos
+            </button>
+          </div>
+        </div>
+      </LightDismissDialog>
+
+      {/* =========================================================
+          DIALOG 15: EXTRATO OFICIAL CONSOLIDADO (IMPRESSÃO / PDF)
+         ========================================================= */}
+      <LightDismissDialog
+        open={reportModalOpen}
+        onClose={() => setReportModalOpen(false)}
+        title="Extrato Oficial Consolidado (Fechamento Mensal)"
+      >
+        <div className="space-y-6">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
+            <div>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                Mobills Pro — Relatório Mensal Executivo
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-slate-400">
+                Competência: {MONTH_NAMES[month - 1]} de {year} · Emitido para: {snapshot?.user?.name || "Minha Conta"}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 dark:bg-emerald-700 px-4 py-2 text-xs font-bold text-white shadow hover:bg-slate-800 dark:hover:bg-emerald-600 transition"
+            >
+              <Printer className="h-4 w-4" />
+              <span>Imprimir / Salvar em PDF</span>
+            </button>
+          </div>
+
+          {/* Consolidated Numbers */}
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-4">
+            <div>
+              <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">Saldo Atual Total</p>
+              <p className="mt-1 text-lg font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                {formatBRL(snapshot?.summary?.totalBalance)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">Receitas do Mês</p>
+              <p className="mt-1 text-lg font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                {formatBRL(snapshot?.summary?.totalIncome)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">Despesas Totais</p>
+              <p className="mt-1 text-lg font-bold text-red-700 dark:text-red-400 tabular-nums">
+                {formatBRL(snapshot?.summary?.totalExpenses)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">Economia Líquida</p>
+              <p className={`mt-1 text-lg font-bold tabular-nums ${snapshot?.summary?.monthlySavings >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
+                {formatBRL(snapshot?.summary?.monthlySavings)}
+              </p>
+            </div>
+          </div>
+
+          {/* Accounts Breakdown */}
+          <div>
+            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider mb-2">
+              Saldos por Instituição Financeira
+            </h4>
+            <div className="divide-y divide-slate-200 dark:divide-slate-800 border rounded-xl border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+              {(snapshot?.accounts || []).map((acc: any) => (
+                <div key={acc.id} className="flex items-center justify-between p-3 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="h-3 w-3 rounded-full" style={{ backgroundColor: acc.color }} />
+                    <span className="font-semibold text-slate-900 dark:text-slate-100">{acc.name} ({acc.institution})</span>
+                  </div>
+                  <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">{formatBRL(acc.currentBalance)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Transactions List */}
+          <div>
+            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider mb-2">
+              Extrato Detalhado de Lançamentos ({snapshot?.transactions?.length || 0})
+            </h4>
+            <div className="max-h-64 overflow-y-auto divide-y divide-slate-200 dark:divide-slate-800 border rounded-xl border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+              {(snapshot?.transactions || []).map((tx: any) => (
+                <div key={tx.id} className="flex items-center justify-between p-2.5 text-xs">
+                  <div>
+                    <p className="font-semibold text-slate-900 dark:text-slate-100">{tx.description}</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">{formatDateBR(tx.date)} · {tx.categoryName || "Geral"}</p>
+                  </div>
+                  <span className={`font-bold tabular-nums ${tx.type === "income" ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
+                    {tx.type === "income" ? "+" : "-"}{formatBRL(tx.amount)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 border-t border-slate-200 dark:border-slate-800 pt-4">
+            <button
+              type="button"
+              onClick={() => setReportModalOpen(false)}
+              className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+            >
+              Fechar
+            </button>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-5 py-2 text-xs font-semibold text-white hover:bg-emerald-800 shadow-sm"
+            >
+              <Printer className="h-4 w-4" />
+              <span>Imprimir Extrato</span>
+            </button>
+          </div>
+        </div>
+      </LightDismissDialog>
+
+      {/* =========================================================
+          DIALOG 16: VISUALIZADOR DE COMPROVANTE ANEXADO
+         ========================================================= */}
+      <LightDismissDialog
+        open={attachmentModal.open}
+        onClose={() => setAttachmentModal({ open: false, url: "", title: "" })}
+        title={`Comprovante — ${attachmentModal.title}`}
+      >
+        <div className="space-y-4">
+          <div className="flex justify-center rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3 max-h-[60vh] overflow-auto">
+            {attachmentModal.url && (
+              <img
+                src={attachmentModal.url}
+                alt={attachmentModal.title}
+                className="max-h-[55vh] rounded-xl object-contain shadow-sm"
+              />
+            )}
+          </div>
+          <div className="flex justify-between items-center border-t border-slate-200 dark:border-slate-800 pt-4">
+            <a
+              href={attachmentModal.url}
+              download={`comprovante_${attachmentModal.title.replace(/\s+/g, "_")}.jpg`}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+            >
+              <Download className="h-4 w-4" />
+              <span>Baixar Imagem</span>
+            </a>
+            <button
+              type="button"
+              onClick={() => setAttachmentModal({ open: false, url: "", title: "" })}
+              className="rounded-lg bg-slate-900 dark:bg-slate-800 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+            >
+              Fechar
+            </button>
+          </div>
         </div>
       </LightDismissDialog>
 
