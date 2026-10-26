@@ -44,6 +44,8 @@ import {
   RefreshCw,
   FileText,
   Calendar,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { LightDismissDialog } from "./LightDismissDialog";
 import {
@@ -53,6 +55,8 @@ import {
   getInitialSeedData,
   clearToZero,
   restoreDemo,
+  isStoreZeroed,
+  ONBOARDING_CHOICE_KEY,
 } from "@/lib/client-store";
 
 type ModuleKey =
@@ -98,6 +102,9 @@ function formatDateBR(dateStr: string): string {
 
 export function MobillsApp({ initialData }: { initialData: any }) {
   const [snapshot, setSnapshot] = useState<any>(initialData);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [dashTab, setDashTab] = useState<"executive" | "accounts_cards" | "budgets_goals" | "categories">("executive");
+  const [welcomeModalOpen, setWelcomeModalOpen] = useState<boolean>(false);
   const [activeModule, setActiveModule] = useState<ModuleKey>("dashboard");
   const [month, setMonth] = useState<number>(initialData?.period?.month || 10);
   const [year, setYear] = useState<number>(initialData?.period?.year || 2026);
@@ -260,6 +267,72 @@ export function MobillsApp({ initialData }: { initialData: any }) {
   const passwordRulesId = useId();
 
   const hideBalances = Boolean(snapshot?.user?.hideBalances);
+
+  // Hydration & Theme Synchronization
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      // 1. Sync theme
+      const savedTheme = localStorage.getItem("mobills_theme");
+      if (savedTheme === "dark" || (!savedTheme && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+        setTheme("dark");
+        document.documentElement.classList.add("dark");
+      } else {
+        setTheme("light");
+        document.documentElement.classList.remove("dark");
+      }
+
+      // 2. Hydrate snapshot from client store
+      const store = getClientStore();
+      setSnapshot(buildClientSnapshot(store, month, year));
+
+      // 3. Check first-run onboarding
+      const savedChoice = localStorage.getItem(ONBOARDING_CHOICE_KEY);
+      if (!savedChoice) {
+        setWelcomeModalOpen(true);
+      }
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const next = theme === "light" ? "dark" : "light";
+    setTheme(next);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("mobills_theme", next);
+      if (next === "dark") {
+        document.documentElement.classList.add("dark");
+      } else {
+        document.documentElement.classList.remove("dark");
+      }
+    }
+  };
+
+  const isCleanActive = useMemo(() => {
+    return (
+      (snapshot?.accounts || []).length === 0 &&
+      (snapshot?.transactions || []).length === 0 &&
+      (snapshot?.creditCards || []).length === 0
+    );
+  }, [snapshot?.accounts, snapshot?.transactions, snapshot?.creditCards]);
+
+  const handleSetMode = (mode: "clean" | "demo") => {
+    if (mode === "clean") {
+      const zero = clearToZero();
+      setSnapshot(buildClientSnapshot(zero, month, year));
+      setBannerMessage({
+        type: "success",
+        text: "🌱 Modo Limpo ativado! Todos os dados foram zerados para seu controle real.",
+      });
+    } else {
+      const demo = restoreDemo();
+      setSnapshot(buildClientSnapshot(demo, month, year));
+      setBannerMessage({
+        type: "success",
+        text: "📊 Modo Demonstração ativado! Dados simulados carregados com sucesso.",
+      });
+    }
+    setWelcomeModalOpen(false);
+    setResetDialogOpen(false);
+  };
 
   async function refreshSnapshot(targetMonth = month, targetYear = year) {
     setLoading(true);
@@ -742,9 +815,9 @@ export function MobillsApp({ initialData }: { initialData: any }) {
   );
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900 lg:flex-row">
+    <div className="flex min-h-screen flex-col bg-slate-50 dark:bg-slate-800/40 dark:bg-slate-950 text-slate-900 dark:text-slate-100 lg:flex-row transition-colors">
       {/* Sidebar Navigation */}
-      <aside className="w-full shrink-0 border-b border-slate-200 bg-white lg:w-64 lg:border-b-0 lg:border-r">
+      <aside className="w-full shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 lg:w-64 lg:border-b-0 lg:border-r">
         <div className="flex h-full flex-col justify-between p-5">
           <div>
             {/* Brand Header */}
@@ -754,10 +827,10 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   <Wallet className="h-5 w-5" />
                 </div>
                 <div>
-                  <h1 className="text-lg font-bold tracking-tight text-slate-900">
+                  <h1 className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">
                     Mobills Pro
                   </h1>
-                  <p className="text-xs font-medium text-slate-600">
+                  <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
                     Gestão Financeira
                   </p>
                 </div>
@@ -837,7 +910,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                     className={`flex w-full items-center justify-between rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
                       active
                         ? "bg-slate-900 text-white"
-                        : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:bg-slate-800 hover:text-slate-900 dark:text-slate-100"
                     }`}
                   >
                     <span className="flex items-center gap-3">
@@ -849,7 +922,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                         className={`rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
                           active
                             ? "bg-slate-700 text-slate-100"
-                            : "bg-slate-100 text-slate-700"
+                            : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
                         }`}
                       >
                         {item.badge}
@@ -862,20 +935,20 @@ export function MobillsApp({ initialData }: { initialData: any }) {
           </div>
 
           {/* Active User Profile Card */}
-          <div className="mt-6 border-t border-slate-200 pt-4">
+          <div className="mt-6 border-t border-slate-200 dark:border-slate-800 pt-4">
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-900">
+                <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
                   {snapshot?.user?.name || "Aristeu Junior"}
                 </p>
-                <p className="truncate text-xs text-slate-600">
+                <p className="truncate text-xs text-slate-600 dark:text-slate-400">
                   {snapshot?.user?.email || "demo@mobills.local"}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setAuthDialogOpen(true)}
-                className="shrink-0 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 transition-colors hover:bg-slate-100"
+                className="shrink-0 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 transition-colors hover:bg-slate-100 dark:bg-slate-800"
               >
                 Conta
               </button>
@@ -887,64 +960,97 @@ export function MobillsApp({ initialData }: { initialData: any }) {
       {/* Main Content Area */}
       <div className="flex flex-1 flex-col min-w-0">
         {/* Global Competence & Quick Actions Top Bar */}
-        <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white px-6 py-4">
-          {/* Month / Year Switcher */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => handleMonthChange(-1)}
-              aria-label="Mês anterior"
-              className="rounded-lg border border-slate-300 p-2 text-slate-700 transition-colors hover:bg-slate-100"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <div className="min-w-[170px] rounded-lg border border-slate-200 bg-slate-50 px-4 py-1.5 text-center">
-              <span className="text-sm font-bold text-slate-900 tabular-nums">
-                {MONTH_NAMES[month - 1]} de {year}
-              </span>
+        <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 py-4">
+          {/* Left: Month Navigator & Status Pill */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleMonthChange(-1)}
+                aria-label="Mês anterior"
+                className="rounded-lg border border-slate-300 dark:border-slate-700 p-2 text-slate-700 dark:text-slate-300 transition-colors hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-800"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <div className="min-w-[160px] rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 dark:bg-slate-800/80 px-3.5 py-1.5 text-center">
+                <span className="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                  {MONTH_NAMES[month - 1]} de {year}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleMonthChange(1)}
+                aria-label="Próximo mês"
+                className="rounded-lg border border-slate-300 dark:border-slate-700 p-2 text-slate-700 dark:text-slate-300 transition-colors hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-800"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => handleMonthChange(1)}
-              aria-label="Próximo mês"
-              className="rounded-lg border border-slate-300 p-2 text-slate-700 transition-colors hover:bg-slate-100"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
+
+            {/* Mode Indicator Badge (Clean Mode vs Demo Mode) */}
+            <div className="flex items-center">
+              {isCleanActive ? (
+                <div className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 px-3 py-1.5 text-xs font-semibold text-emerald-900 dark:text-emerald-200 shadow-sm">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>🌱 Modo Limpo</span>
+                  <button
+                    type="button"
+                    onClick={() => handleSetMode("demo")}
+                    className="ml-1 rounded-md bg-emerald-200/90 dark:bg-emerald-800 px-2 py-0.5 text-[11px] font-bold text-emerald-950 dark:text-emerald-100 hover:bg-emerald-300 dark:hover:bg-emerald-700"
+                    title="Carregar dados de demonstração com contas e despesas simuladas"
+                  >
+                    Demo
+                  </button>
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-2 rounded-xl border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-950/60 px-3 py-1.5 text-xs font-semibold text-blue-900 dark:text-blue-200 shadow-sm">
+                  <span className="h-2 w-2 rounded-full bg-blue-500" />
+                  <span>📊 Modo Demo</span>
+                  <button
+                    type="button"
+                    onClick={() => setResetDialogOpen(true)}
+                    className="ml-1 rounded-md bg-blue-200/90 dark:bg-blue-800 px-2 py-0.5 text-[11px] font-bold text-blue-950 dark:text-blue-100 hover:bg-blue-300 dark:hover:bg-blue-700"
+                    title="Zerar para começar limpo com suas finanças reais"
+                  >
+                    Zerar
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Quick Entry Shortcuts & Privacy Toggle */}
+          {/* Right: Quick Entry Shortcuts, Privacy & Theme Switcher */}
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => openNewTxDialog("income")}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-700 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-900 transition-colors hover:bg-emerald-100"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-2 text-xs font-semibold text-emerald-900 dark:text-emerald-300 transition-colors hover:bg-emerald-100 dark:hover:bg-emerald-900/60"
             >
-              <TrendingUp className="h-3.5 w-3.5 text-emerald-700" />
+              <TrendingUp className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-400" />
               <span>+ Receita</span>
             </button>
             <button
               type="button"
               onClick={() => openNewTxDialog("expense")}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-red-700 bg-red-50 px-3 py-2 text-xs font-semibold text-red-900 transition-colors hover:bg-red-100"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-red-700 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-xs font-semibold text-red-900 dark:text-red-300 transition-colors hover:bg-red-100 dark:hover:bg-red-900/60"
             >
-              <TrendingDown className="h-3.5 w-3.5 text-red-700" />
+              <TrendingDown className="h-3.5 w-3.5 text-red-700 dark:text-red-400" />
               <span>+ Despesa</span>
             </button>
             <button
               type="button"
               onClick={() => openNewTxDialog("card_expense")}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-purple-700 bg-purple-50 px-3 py-2 text-xs font-semibold text-purple-900 transition-colors hover:bg-purple-100"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-purple-700 bg-purple-50 dark:bg-purple-950/40 px-3 py-2 text-xs font-semibold text-purple-900 dark:text-purple-300 transition-colors hover:bg-purple-100 dark:hover:bg-purple-900/60"
             >
-              <CreditCardIcon className="h-3.5 w-3.5 text-purple-700" />
-              <span>+ Compra Cartão</span>
+              <CreditCardIcon className="h-3.5 w-3.5 text-purple-700 dark:text-purple-400" />
+              <span>+ Cartão</span>
             </button>
             <button
               type="button"
               onClick={() => openNewTxDialog("transfer")}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 transition-colors hover:bg-slate-100"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 transition-colors hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700"
             >
-              <ArrowLeftRight className="h-3.5 w-3.5 text-slate-700" />
+              <ArrowLeftRight className="h-3.5 w-3.5 text-slate-700 dark:text-slate-300" />
               <span>Transferir</span>
             </button>
             <button
@@ -953,18 +1059,33 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               aria-label={
                 hideBalances ? "Mostrar saldos financeiros" : "Ocultar saldos financeiros"
               }
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 transition-colors hover:bg-slate-100"
+              title={hideBalances ? "Mostrar saldos" : "Ocultar saldos"}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 transition-colors hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700"
             >
               {hideBalances ? (
                 <>
-                  <EyeOff className="h-4 w-4 text-slate-700" />
-                  <span>Mostrar Saldos</span>
+                  <EyeOff className="h-4 w-4 text-slate-700 dark:text-slate-300" />
+                  <span className="hidden sm:inline">Mostrar Saldos</span>
                 </>
               ) : (
                 <>
-                  <Eye className="h-4 w-4 text-slate-700" />
-                  <span>Ocultar Saldos</span>
+                  <Eye className="h-4 w-4 text-slate-700 dark:text-slate-300" />
+                  <span className="hidden sm:inline">Ocultar Saldos</span>
                 </>
+              )}
+            </button>
+            {/* Dark Mode Theme Toggle */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-label={theme === "dark" ? "Alternar para Modo Claro" : "Alternar para Modo Escuro"}
+              title={theme === "dark" ? "Modo Claro" : "Modo Escuro"}
+              className="inline-flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-2 text-slate-700 dark:text-slate-300 dark:text-slate-200 transition-colors hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700"
+            >
+              {theme === "dark" ? (
+                <Sun className="h-4 w-4 text-amber-400" />
+              ) : (
+                <Moon className="h-4 w-4 text-slate-700 dark:text-slate-300" />
               )}
             </button>
           </div>
@@ -997,15 +1118,88 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               MODULE 1: DASHBOARD (VISÃO GERAL)
              ========================================================= */}
           {activeModule === "dashboard" && (
-            <div className="space-y-8">
+            <div className="space-y-6">
+              {/* Segmented Sub-tab Navigation (Mobills Modular Dashboard) */}
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+                <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 dark:bg-slate-800/80 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setDashTab("executive")}
+                    className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition-all ${
+                      dashTab === "executive"
+                        ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-slate-100 dark:hover:text-slate-100"
+                    }`}
+                  >
+                    <LayoutDashboard className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>Visão Gerencial</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDashTab("accounts_cards")}
+                    className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition-all ${
+                      dashTab === "accounts_cards"
+                        ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-slate-100 dark:hover:text-slate-100"
+                    }`}
+                  >
+                    <Wallet className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    <span>Contas & Cartões</span>
+                    <span className="rounded-full bg-slate-200 dark:bg-slate-700 px-1.5 py-0.2 text-[10px] font-bold tabular-nums">
+                      {(snapshot?.accounts?.length || 0) + (snapshot?.creditCards?.length || 0)}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDashTab("budgets_goals")}
+                    className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition-all ${
+                      dashTab === "budgets_goals"
+                        ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-slate-100 dark:hover:text-slate-100"
+                    }`}
+                  >
+                    <Target className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                    <span>Orçamentos & Metas</span>
+                    <span className="rounded-full bg-slate-200 dark:bg-slate-700 px-1.5 py-0.2 text-[10px] font-bold tabular-nums">
+                      {snapshot?.budgets?.length || 0}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDashTab("categories")}
+                    className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition-all ${
+                      dashTab === "categories"
+                        ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-slate-100 dark:hover:text-slate-100"
+                    }`}
+                  >
+                    <PieChart className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                    <span>Categorias & Análise</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                  <span>Aba selecionada:</span>
+                  <span className="font-semibold text-slate-900 dark:text-slate-100 dark:text-slate-200">
+                    {dashTab === "executive" && "Cockpit e Indicadores Executivos"}
+                    {dashTab === "accounts_cards" && "Saldos, Carteiras e Faturas"}
+                    {dashTab === "budgets_goals" && "Termômetros de Teto e Metas"}
+                    {dashTab === "categories" && "Distribuição de Despesas"}
+                  </span>
+                </div>
+              </div>
+
+              {/* TAB 1: VISÃO GERENCIAL (EXECUTIVE) */}
+              {dashTab === "executive" && (
+                <div className="space-y-6">
               {/* Executive Ledger Strip (Single cohesive surface, no nested cards) */}
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5">
+              <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-5">
                   <div>
-                    <h2 className="text-xl font-bold text-slate-900">
+                    <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
                       Balanço Consolidado de {MONTH_NAMES[month - 1]}
                     </h2>
-                    <p className="mt-1 text-sm text-slate-600">
+                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
                       Liquidez imediata nas contas bancárias, fluxo de caixa mensal e faturas de cartão de crédito.
                     </p>
                   </div>
@@ -1017,41 +1211,41 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   </div>
                 </div>
 
-                <dl className="mt-5 grid grid-cols-1 gap-6 divide-y divide-slate-200 sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-4 lg:divide-x">
+                <dl className="mt-5 grid grid-cols-1 gap-6 divide-y divide-slate-200 dark:divide-slate-800 sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-4 lg:divide-x">
                   <div className="pt-4 first:pt-0 lg:px-5 lg:pt-0 lg:first:pl-0">
-                    <dt className="text-sm font-semibold text-slate-700">
+                    <dt className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                       Saldo Atual em Contas
                     </dt>
-                    <dd className="mt-1.5 text-2xl font-bold text-slate-900 tabular-nums">
+                    <dd className="mt-1.5 text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                       {formatBRL(snapshot?.summary?.totalBalance, hideBalances)}
                     </dd>
-                    <p className="mt-1 text-xs font-medium text-slate-600 tabular-nums">
+                    <p className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-400 tabular-nums">
                       Projetado no mês:{" "}
                       {formatBRL(snapshot?.summary?.projectedBalance, hideBalances)}
                     </p>
                   </div>
 
                   <div className="pt-4 sm:pt-0 lg:px-5">
-                    <dt className="text-sm font-semibold text-slate-700">
+                    <dt className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                       Receitas do Mês
                     </dt>
                     <dd className="mt-1.5 text-2xl font-bold text-emerald-700 tabular-nums">
                       {formatBRL(snapshot?.summary?.totalIncome, hideBalances)}
                     </dd>
-                    <p className="mt-1 text-xs font-medium text-slate-600 tabular-nums">
+                    <p className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-400 tabular-nums">
                       Recebido: {formatBRL(snapshot?.summary?.incomeCompleted, hideBalances)} · Pendente:{" "}
                       {formatBRL(snapshot?.summary?.incomePending, hideBalances)}
                     </p>
                   </div>
 
                   <div className="pt-4 lg:px-5 lg:pt-0">
-                    <dt className="text-sm font-semibold text-slate-700">
+                    <dt className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                       Despesas Totais (Contas + Cartão)
                     </dt>
                     <dd className="mt-1.5 text-2xl font-bold text-red-700 tabular-nums">
                       {formatBRL(snapshot?.summary?.totalExpenses, hideBalances)}
                     </dd>
-                    <p className="mt-1 text-xs font-medium text-slate-600 tabular-nums">
+                    <p className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-400 tabular-nums">
                       Em conta:{" "}
                       {formatBRL(
                         (snapshot?.summary?.expenseAccountCompleted || 0) +
@@ -1063,7 +1257,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   </div>
 
                   <div className="pt-4 lg:px-5 lg:pt-0">
-                    <dt className="text-sm font-semibold text-slate-700">
+                    <dt className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                       Resultado Líquido do Mês
                     </dt>
                     <dd
@@ -1075,7 +1269,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                     >
                       {formatBRL(snapshot?.summary?.monthlySavings, hideBalances)}
                     </dd>
-                    <p className="mt-1 text-xs font-medium text-slate-600">
+                    <p className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-400">
                       Receitas menos despesas totais da competência
                     </p>
                   </div>
@@ -1089,10 +1283,10 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                     <div className="flex items-center gap-2.5">
                       <Clock className="h-5 w-5 text-amber-800" />
                       <div>
-                        <h3 className="text-base font-bold text-slate-900">
+                        <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
                           Contas a Pagar Próximas do Vencimento ({upcomingBills.length})
                         </h3>
-                        <p className="text-xs text-slate-700">
+                        <p className="text-xs text-slate-700 dark:text-slate-300">
                           Alertas automáticos para evitar juros e atrasos no mês de {MONTH_NAMES[month - 1]}.
                         </p>
                       </div>
@@ -1110,8 +1304,8 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                     {upcomingBills.map((bill: any) => (
                       <li key={bill.id} className="flex items-center justify-between gap-4 py-2.5">
                         <div>
-                          <p className="text-sm font-semibold text-slate-900">{bill.description}</p>
-                          <p className="text-xs text-slate-700 tabular-nums">
+                          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{bill.description}</p>
+                          <p className="text-xs text-slate-700 dark:text-slate-300 tabular-nums">
                             Vence em: {formatDateBR(bill.date)} · Conta: {bill.accountName || "Principal"}
                           </p>
                         </div>
@@ -1138,29 +1332,167 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 </section>
               )}
 
-              {/* Two-column Operational Grid: Accounts + Credit Cards */}
+                                {/* Mini Cashflow History Strip */}
+                  {snapshot?.cashFlowHistory?.length > 0 && (
+                    <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
+                        <div>
+                          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                            Evolução do Fluxo de Caixa (Últimos 6 Meses)
+                          </h3>
+                          <p className="text-xs text-slate-600 dark:text-slate-400">
+                            Histórico de receitas vs despesas para análise de liquidez.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setActiveModule("reports")}
+                          className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline"
+                        >
+                          Ver Gráficos Detalhados →
+                        </button>
+                      </div>
+                      <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+                        {snapshot.cashFlowHistory.map((item: any) => (
+                          <div key={item.label} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 dark:bg-slate-800/50 p-3 text-center">
+                            <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{item.label}</p>
+                            <p className="mt-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                              +{formatBRL(item.income, hideBalances)}
+                            </p>
+                            <p className="text-xs font-semibold text-red-700 dark:text-red-400 tabular-nums">
+                              -{formatBRL(item.expenses, hideBalances)}
+                            </p>
+                            <div className="mt-2 border-t border-slate-200 dark:border-slate-800 dark:border-slate-700 pt-1.5">
+                              <span className={`text-xs font-bold tabular-nums ${item.balance >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
+                                {formatBRL(item.balance, hideBalances)}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  {/* Clean Mode Empty State Hero */}
+                  {isCleanActive && (
+                    <div className="rounded-2xl border-2 border-dashed border-emerald-300 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20 p-8 text-center shadow-sm">
+                      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300">
+                        <Sparkles className="h-7 w-7" />
+                      </div>
+                      <h3 className="mt-4 text-lg font-bold text-slate-900 dark:text-slate-100">
+                        🌱 Seu Mobills Pro está 100% limpo e pronto!
+                      </h3>
+                      <p className="mx-auto mt-1.5 max-w-lg text-sm text-slate-600 dark:text-slate-400">
+                        Cadastre sua primeira conta bancária ou cartão de crédito para iniciar seu controle financeiro real, ou experimente os dados simulados com 1 clique.
+                      </p>
+                      <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setAccountDialogOpen(true)}
+                          className="rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white shadow hover:bg-emerald-800 transition"
+                        >
+                          + Cadastrar Minha Primeira Conta
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCardDialogOpen(true)}
+                          className="rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 transition"
+                        >
+                          + Cadastrar Cartão de Crédito
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSetMode("demo")}
+                          className="rounded-xl border border-emerald-300 dark:border-emerald-700 bg-emerald-100 dark:bg-emerald-900/40 px-4 py-2.5 text-xs font-semibold text-emerald-950 dark:text-emerald-200 hover:bg-emerald-200 transition"
+                        >
+                          📊 Carregar Dados de Demonstração
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Navigation Shortcut Cards to Details */}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <button
+                      type="button"
+                      onClick={() => setDashTab("accounts_cards")}
+                      className="flex items-center justify-between rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-left shadow-sm transition hover:border-slate-400 dark:hover:border-slate-700 hover:shadow-md"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
+                          <Wallet className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-slate-900 dark:text-slate-100">Contas & Cartões</p>
+                          <p className="text-xs text-slate-600 dark:text-slate-400">{snapshot?.accounts?.length || 0} contas · {snapshot?.creditCards?.length || 0} cartões</p>
+                        </div>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-slate-400" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setDashTab("budgets_goals")}
+                      className="flex items-center justify-between rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-left shadow-sm transition hover:border-slate-400 dark:hover:border-slate-700 hover:shadow-md"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400">
+                          <Target className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-slate-900 dark:text-slate-100">Orçamentos & Metas</p>
+                          <p className="text-xs text-slate-600 dark:text-slate-400">{snapshot?.budgets?.length || 0} orçamentos ativos</p>
+                        </div>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-slate-400" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setDashTab("categories")}
+                      className="flex items-center justify-between rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-left shadow-sm transition hover:border-slate-400 dark:hover:border-slate-700 hover:shadow-md"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400">
+                          <PieChart className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-slate-900 dark:text-slate-100">Categorias & Análise</p>
+                          <p className="text-xs text-slate-600 dark:text-slate-400">Distribuição mensal de despesas</p>
+                        </div>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-slate-400" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: CONTAS & CARTÕES */}
+              {dashTab === "accounts_cards" && (
+                <div className="space-y-6">
+                  {/* Two-column Operational Grid: Accounts + Credit Cards */}
               <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
                 {/* Accounts List */}
-                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+                <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
                     <div>
-                      <h3 className="text-base font-bold text-slate-900">
+                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
                         Saldos por Conta e Carteira
                       </h3>
-                      <p className="text-xs text-slate-600">
+                      <p className="text-xs text-slate-600 dark:text-slate-400">
                         Clique em reajustar para corrigir divergências imediatas de saldo.
                       </p>
                     </div>
                     <button
                       type="button"
                       onClick={() => setAccountDialogOpen(true)}
-                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100"
+                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100 dark:bg-slate-800"
                     >
                       + Nova Conta
                     </button>
                   </div>
 
-                  <ul className="divide-y divide-slate-200">
+                  <ul className="divide-y divide-slate-200 dark:divide-slate-800">
                     {(snapshot?.accounts || []).map((acc: any) => (
                       <li
                         key={acc.id}
@@ -1172,10 +1504,10 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                             style={{ backgroundColor: acc.color }}
                           />
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-900">
+                            <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
                               {acc.name}
                             </p>
-                            <p className="text-xs text-slate-600">
+                            <p className="text-xs text-slate-600 dark:text-slate-400">
                               {acc.institution} · Previsto:{" "}
                               <span className="tabular-nums">
                                 {formatBRL(acc.projectedBalance, hideBalances)}
@@ -1187,7 +1519,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                           <span
                             className={`text-sm font-bold tabular-nums ${
                               acc.currentBalance >= 0
-                                ? "text-slate-900"
+                                ? "text-slate-900 dark:text-slate-100"
                                 : "text-red-700"
                             }`}
                           >
@@ -1204,7 +1536,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                                 currentBalance: acc.currentBalance,
                               });
                             }}
-                            className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                            className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:bg-slate-800"
                           >
                             Reajustar
                           </button>
@@ -1215,26 +1547,26 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 </section>
 
                 {/* Credit Cards Summary */}
-                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+                <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
                     <div>
-                      <h3 className="text-base font-bold text-slate-900">
+                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
                         Faturas de Cartão de Crédito ({MONTH_NAMES[month - 1]})
                       </h3>
-                      <p className="text-xs text-slate-600">
+                      <p className="text-xs text-slate-600 dark:text-slate-400">
                         Acompanhamento de limites disponíveis e vencimentos.
                       </p>
                     </div>
                     <button
                       type="button"
                       onClick={() => setCardDialogOpen(true)}
-                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100"
+                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100 dark:bg-slate-800"
                     >
                       + Novo Cartão
                     </button>
                   </div>
 
-                  <ul className="divide-y divide-slate-200">
+                  <ul className="divide-y divide-slate-200 dark:divide-slate-800">
                     {(snapshot?.creditCards || []).map((card: any) => {
                       const usedPct =
                         card.limitAmount > 0
@@ -1253,13 +1585,13 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                                 style={{ backgroundColor: card.color }}
                               />
                               <div>
-                                <p className="text-sm font-semibold text-slate-900">
+                                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                                   {card.name}{" "}
-                                  <span className="text-xs font-normal text-slate-600">
+                                  <span className="text-xs font-normal text-slate-600 dark:text-slate-400">
                                     ({card.brand})
                                   </span>
                                 </p>
-                                <p className="text-xs text-slate-600 tabular-nums">
+                                <p className="text-xs text-slate-600 dark:text-slate-400 tabular-nums">
                                   Fecha dia {card.closingDay} · Vence dia{" "}
                                   {card.dueDay}
                                 </p>
@@ -1267,7 +1599,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                             </div>
 
                             <div className="text-right">
-                              <p className="text-sm font-bold text-slate-900 tabular-nums">
+                              <p className="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                                 Fatura:{" "}
                                 {formatBRL(
                                   card.currentInvoice.totalAmount,
@@ -1292,7 +1624,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                           </div>
 
                           <div className="space-y-1">
-                            <div className="flex justify-between text-xs text-slate-700 tabular-nums">
+                            <div className="flex justify-between text-xs text-slate-700 dark:text-slate-300 tabular-nums">
                               <span>
                                 Limite utilizado:{" "}
                                 {formatBRL(card.usedLimit, hideBalances)} ({usedPct}%)
@@ -1302,7 +1634,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                                 {formatBRL(card.availableLimit, hideBalances)}
                               </span>
                             </div>
-                            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                               <div
                                 className="h-full rounded-full bg-purple-700 transition-all"
                                 style={{ width: `${usedPct}%` }}
@@ -1348,16 +1680,20 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 </section>
               </div>
 
-              {/* Two-column Grid: Budget Alerts + Category Breakdown */}
-              <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+                              </div>
+              )}
+
+              {/* TAB 3: ORÇAMENTOS & METAS */}
+              {dashTab === "budgets_goals" && (
+                <div className="space-y-6">
                 {/* Monthly Budget Alerts */}
-                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+                <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
                     <div>
-                      <h3 className="text-base font-bold text-slate-900">
+                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
                         Termômetro do Planejamento Mensal
                       </h3>
-                      <p className="text-xs text-slate-600">
+                      <p className="text-xs text-slate-600 dark:text-slate-400">
                         Alertas automáticos de consumo de orçamento por categoria.
                       </p>
                     </div>
@@ -1370,7 +1706,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                     </button>
                   </div>
 
-                  <ul className="divide-y divide-slate-200">
+                  <ul className="divide-y divide-slate-200 dark:divide-slate-800">
                     {(snapshot?.budgets || []).map((b: any) => {
                       const barColor =
                         b.alertLevel === "exceeded"
@@ -1381,18 +1717,18 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                       return (
                         <li key={b.id} className="space-y-1.5 py-3.5">
                           <div className="flex items-center justify-between text-sm">
-                            <span className="font-semibold text-slate-900">
+                            <span className="font-semibold text-slate-900 dark:text-slate-100">
                               {b.categoryName}
                             </span>
-                            <span className="font-bold text-slate-900 tabular-nums">
+                            <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                               {formatBRL(b.spentAmount, hideBalances)}{" "}
-                              <span className="font-normal text-slate-600">
+                              <span className="font-normal text-slate-600 dark:text-slate-400">
                                 / {formatBRL(b.amountLimit, hideBalances)} (
                                 {b.percentage}%)
                               </span>
                             </span>
                           </div>
-                          <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+                          <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                             <div
                               className={`h-full rounded-full ${barColor}`}
                               style={{
@@ -1426,14 +1762,20 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   </ul>
                 </section>
 
-                {/* Expenses by Category in Month */}
-                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+                                </div>
+              )}
+
+              {/* TAB 4: CATEGORIAS & ANÁLISE */}
+              {dashTab === "categories" && (
+                <div className="space-y-6">
+                  {/* Expenses by Category in Month */}
+                <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
                     <div>
-                      <h3 className="text-base font-bold text-slate-900">
+                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
                         Despesas por Categoria ({MONTH_NAMES[month - 1]})
                       </h3>
-                      <p className="text-xs text-slate-600">
+                      <p className="text-xs text-slate-600 dark:text-slate-400">
                         Soma das despesas em conta e compras no cartão de crédito.
                       </p>
                     </div>
@@ -1446,7 +1788,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                     </button>
                   </div>
 
-                  <ul className="divide-y divide-slate-200">
+                  <ul className="divide-y divide-slate-200 dark:divide-slate-800">
                     {parentExpenseCategories.map((cat: any) => {
                       const pct =
                         snapshot?.summary?.totalExpenses > 0
@@ -1459,21 +1801,21 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                       return (
                         <li key={cat.id} className="space-y-1.5 py-3.5">
                           <div className="flex items-center justify-between text-sm">
-                            <span className="flex items-center gap-2 font-semibold text-slate-900">
+                            <span className="flex items-center gap-2 font-semibold text-slate-900 dark:text-slate-100">
                               <span
                                 className="h-3 w-3 rounded-full"
                                 style={{ backgroundColor: cat.color }}
                               />
                               {cat.name}
                             </span>
-                            <span className="font-bold text-slate-900 tabular-nums">
+                            <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                               {formatBRL(cat.spentInMonth, hideBalances)}{" "}
-                              <span className="text-xs font-normal text-slate-600">
+                              <span className="text-xs font-normal text-slate-600 dark:text-slate-400">
                                 ({pct}%)
                               </span>
                             </span>
                           </div>
-                          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                             <div
                               className="h-full rounded-full"
                               style={{
@@ -1488,8 +1830,9 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   </ul>
                 </section>
               </div>
-            </div>
-          )}
+            )}
+          </div>
+        )}
 
           {/* =========================================================
               MODULE 2: TRANSAÇÕES (LANÇAMENTOS & FILTROS AVANÇADOS)
@@ -1498,10 +1841,10 @@ export function MobillsApp({ initialData }: { initialData: any }) {
             <div className="space-y-6">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
                     Lançamentos de {MONTH_NAMES[month - 1]} de {year}
                   </h2>
-                  <p className="text-sm text-slate-600">
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
                     Gerencie receitas, despesas fixas ou variáveis, compras parceladas no cartão e transferências.
                   </p>
                 </div>
@@ -1509,7 +1852,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   <button
                     type="button"
                     onClick={handleExportCSV}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100 dark:bg-slate-800"
                   >
                     <Download className="h-4 w-4" />
                     <span>Exportar CSV</span>
@@ -1526,11 +1869,11 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               </div>
 
               {/* Filter Bar */}
-              <div className="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
                   <label
                     htmlFor="filter-search"
-                    className="block text-xs font-semibold text-slate-700"
+                    className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
                   >
                     Buscar por descrição ou #tag
                   </label>
@@ -1542,7 +1885,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                       value={txSearch}
                       onChange={(e) => setTxSearch(e.target.value)}
                       placeholder="Ex: Supermercado, #trabalho..."
-                      className="w-full rounded-lg border border-slate-300 py-1.5 pl-9 pr-3 text-sm text-slate-900"
+                      className="w-full rounded-lg border border-slate-300 py-1.5 pl-9 pr-3 text-sm text-slate-900 dark:text-slate-100"
                     />
                   </div>
                 </div>
@@ -1550,7 +1893,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 <div>
                   <label
                     htmlFor="filter-type"
-                    className="block text-xs font-semibold text-slate-700"
+                    className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
                   >
                     Tipo de Lançamento
                   </label>
@@ -1558,7 +1901,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                     id="filter-type"
                     value={txTypeFilter}
                     onChange={(e) => setTxTypeFilter(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900"
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100"
                   >
                     <option value="all">Todos os tipos</option>
                     <option value="income">Receitas</option>
@@ -1571,7 +1914,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 <div>
                   <label
                     htmlFor="filter-status"
-                    className="block text-xs font-semibold text-slate-700"
+                    className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
                   >
                     Situação (Efetivado / Pendente)
                   </label>
@@ -1579,7 +1922,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                     id="filter-status"
                     value={txStatusFilter}
                     onChange={(e) => setTxStatusFilter(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900"
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100"
                   >
                     <option value="all">Todos os status</option>
                     <option value="completed">Efetivados (Pagos / Recebidos)</option>
@@ -1590,7 +1933,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 <div>
                   <label
                     htmlFor="filter-cat"
-                    className="block text-xs font-semibold text-slate-700"
+                    className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
                   >
                     Categoria
                   </label>
@@ -1598,7 +1941,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                     id="filter-cat"
                     value={txCategoryFilter}
                     onChange={(e) => setTxCategoryFilter(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900"
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100"
                   >
                     <option value="all">Todas as categorias</option>
                     {(snapshot?.categories || []).map((c: any) => (
@@ -1620,13 +1963,13 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 <table>
                   <caption
                     id={tableCaptionId}
-                    className="border-b border-slate-200 bg-slate-50 px-5 py-3 text-left text-xs font-semibold text-slate-700"
+                    className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 px-5 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300"
                   >
                     Exibindo {filteredTransactions.length} lançamentos na competência{" "}
                     {MONTH_NAMES[month - 1]}/{year}
                   </caption>
                   <thead>
-                    <tr className="border-b border-slate-200 text-left text-xs font-bold uppercase tracking-wider text-slate-700">
+                    <tr className="border-b border-slate-200 dark:border-slate-800 text-left text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                       <th className="px-5 py-3.5">Descrição</th>
                       <th className="px-4 py-3.5">Categoria</th>
                       <th className="px-4 py-3.5">Conta / Cartão</th>
@@ -1635,21 +1978,21 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                       <th className="px-5 py-3.5 text-right">Valor</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-200 text-sm">
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800 text-sm">
                     {filteredTransactions.map((tx: any) => {
                       const isIncome = tx.type === "income";
                       const isTransfer = tx.type === "transfer";
                       return (
                         <tr
                           key={tx.id}
-                          className="transition-colors hover:bg-slate-50"
+                          className="transition-colors hover:bg-slate-50 dark:bg-slate-800/40"
                         >
-                          <th scope="row" className="px-5 py-3.5 font-semibold text-slate-900">
+                          <th scope="row" className="px-5 py-3.5 font-semibold text-slate-900 dark:text-slate-100">
                             <div className="flex flex-col gap-1">
                               <div className="flex items-center gap-2">
                                 <span>{tx.description}</span>
                                 {tx.isFixed && (
-                                  <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-700">
+                                  <span className="inline-flex items-center gap-1 rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[11px] font-medium text-slate-700 dark:text-slate-300">
                                     <Repeat className="h-3 w-3" /> Fixa
                                   </span>
                                 )}
@@ -1665,7 +2008,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                                   {tx.tags.map((t: string) => (
                                     <span
                                       key={t}
-                                      className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-700"
+                                      className="rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[11px] font-medium text-slate-700 dark:text-slate-300"
                                     >
                                       #{t}
                                     </span>
@@ -1674,9 +2017,9 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                               )}
                             </div>
                           </th>
-                          <td className="px-4 py-3.5 text-slate-700">
+                          <td className="px-4 py-3.5 text-slate-700 dark:text-slate-300">
                             {isTransfer ? (
-                              <span className="text-xs font-medium text-slate-600">
+                              <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
                                 Transferência entre contas
                               </span>
                             ) : (
@@ -1692,7 +2035,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                               </span>
                             )}
                           </td>
-                          <td className="px-4 py-3.5 text-slate-700">
+                          <td className="px-4 py-3.5 text-slate-700 dark:text-slate-300">
                             {tx.type === "card_expense" ? (
                               <span className="inline-flex items-center gap-1 font-medium text-purple-900">
                                 <CreditCardIcon className="h-3.5 w-3.5" />
@@ -1706,7 +2049,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                               <span>{tx.accountName || "Conta"}</span>
                             )}
                           </td>
-                          <td className="px-4 py-3.5 text-slate-700 tabular-nums">
+                          <td className="px-4 py-3.5 text-slate-700 dark:text-slate-300 tabular-nums">
                             {formatDateBR(tx.date)}
                           </td>
                           <td className="px-4 py-3.5">
@@ -1786,10 +2129,10 @@ export function MobillsApp({ initialData }: { initialData: any }) {
             <div className="space-y-6">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
                     Contas Bancárias, Carteiras e Investimentos
                   </h2>
-                  <p className="text-sm text-slate-600">
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
                     Controle centralizado de todas as suas instituições financeiras com reajuste rápido de saldo.
                   </p>
                 </div>
@@ -1807,7 +2150,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 {(snapshot?.accounts || []).map((acc: any) => (
                   <section
                     key={acc.id}
-                    className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+                    className="flex flex-col justify-between rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm"
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex items-center gap-3">
@@ -1818,10 +2161,10 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                           <Building2 className="h-5 w-5" />
                         </div>
                         <div>
-                          <h3 className="text-base font-bold text-slate-900">
+                          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
                             {acc.name}
                           </h3>
-                          <p className="text-xs font-medium text-slate-600">
+                          <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
                             {acc.institution} ·{" "}
                             {acc.type === "checking"
                               ? "Conta Corrente"
@@ -1846,27 +2189,27 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                       </button>
                     </div>
 
-                    <dl className="mt-6 grid grid-cols-2 gap-4 border-t border-slate-200 pt-4">
+                    <dl className="mt-6 grid grid-cols-2 gap-4 border-t border-slate-200 dark:border-slate-800 pt-4">
                       <div>
-                        <dt className="text-xs font-semibold text-slate-600">
+                        <dt className="text-xs font-semibold text-slate-600 dark:text-slate-400">
                           Saldo Atual Efetivado
                         </dt>
-                        <dd className="mt-1 text-xl font-bold text-slate-900 tabular-nums">
+                        <dd className="mt-1 text-xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                           {formatBRL(acc.currentBalance, hideBalances)}
                         </dd>
                       </div>
                       <div>
-                        <dt className="text-xs font-semibold text-slate-600">
+                        <dt className="text-xs font-semibold text-slate-600 dark:text-slate-400">
                           Saldo Previsto ({MONTH_NAMES[month - 1]})
                         </dt>
-                        <dd className="mt-1 text-xl font-bold text-slate-700 tabular-nums">
+                        <dd className="mt-1 text-xl font-bold text-slate-700 dark:text-slate-300 tabular-nums">
                           {formatBRL(acc.projectedBalance, hideBalances)}
                         </dd>
                       </div>
                     </dl>
 
                     <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
-                      <span className="text-xs font-medium text-slate-600">
+                      <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
                         {acc.includeInSummary
                           ? "Incluída na soma da tela inicial"
                           : "Oculta da soma principal"}
@@ -1882,7 +2225,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                             currentBalance: acc.currentBalance,
                           });
                         }}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100 dark:bg-slate-800"
                       >
                         <SlidersHorizontal className="h-3.5 w-3.5" />
                         <span>Reajustar Saldo</span>
@@ -1901,10 +2244,10 @@ export function MobillsApp({ initialData }: { initialData: any }) {
             <div className="space-y-6">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
                     Central de Cartões de Crédito e Faturas
                   </h2>
-                  <p className="text-sm text-slate-600">
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
                     Acompanhe limites totais, compras parceladas e efetue a baixa de faturas diretamente na conta bancária.
                   </p>
                 </div>
@@ -1944,9 +2287,9 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   return (
                     <section
                       key={card.id}
-                      className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+                      className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm"
                     >
-                      <div className="flex items-start justify-between border-b border-slate-200 pb-4">
+                      <div className="flex items-start justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
                         <div className="flex items-center gap-3">
                           <div
                             className="flex h-11 w-11 items-center justify-center rounded-xl text-white"
@@ -1955,10 +2298,10 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                             <CreditCardIcon className="h-5 w-5" />
                           </div>
                           <div>
-                            <h3 className="text-base font-bold text-slate-900">
+                            <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
                               {card.name}
                             </h3>
-                            <p className="text-xs font-medium text-slate-600">
+                            <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
                               {card.brand} · Débito em:{" "}
                               {card.accountName || "Qualquer conta"} · Fecha dia{" "}
                               {card.closingDay} / Vence dia {card.dueDay}
@@ -1982,10 +2325,10 @@ export function MobillsApp({ initialData }: { initialData: any }) {
 
                       <dl className="mt-4 grid grid-cols-3 gap-4 text-sm">
                         <div>
-                          <dt className="text-xs font-medium text-slate-600">
+                          <dt className="text-xs font-medium text-slate-600 dark:text-slate-400">
                             Fatura {MONTH_NAMES[month - 1]}
                           </dt>
-                          <dd className="mt-1 text-lg font-bold text-slate-900 tabular-nums">
+                          <dd className="mt-1 text-lg font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                             {formatBRL(
                               card.currentInvoice.totalAmount,
                               hideBalances
@@ -1993,7 +2336,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                           </dd>
                         </div>
                         <div>
-                          <dt className="text-xs font-medium text-slate-600">
+                          <dt className="text-xs font-medium text-slate-600 dark:text-slate-400">
                             Limite Utilizado (Total)
                           </dt>
                           <dd className="mt-1 text-lg font-bold text-purple-900 tabular-nums">
@@ -2001,7 +2344,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                           </dd>
                         </div>
                         <div>
-                          <dt className="text-xs font-medium text-slate-600">
+                          <dt className="text-xs font-medium text-slate-600 dark:text-slate-400">
                             Limite Disponível
                           </dt>
                           <dd className="mt-1 text-lg font-bold text-emerald-700 tabular-nums">
@@ -2011,13 +2354,13 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                       </dl>
 
                       <div className="mt-4 space-y-1.5">
-                        <div className="flex justify-between text-xs font-medium text-slate-700 tabular-nums">
+                        <div className="flex justify-between text-xs font-medium text-slate-700 dark:text-slate-300 tabular-nums">
                           <span>Ocupação do Limite ({usedPct}%)</span>
                           <span>
                             Limite Total: {formatBRL(card.limitAmount, hideBalances)}
                           </span>
                         </div>
-                        <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+                        <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                           <div
                             className="h-full rounded-full bg-purple-700"
                             style={{ width: `${usedPct}%` }}
@@ -2026,9 +2369,9 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                       </div>
 
                       {/* Invoice Items */}
-                      <div className="mt-5 border-t border-slate-200 pt-4">
+                      <div className="mt-5 border-t border-slate-200 dark:border-slate-800 pt-4">
                         <div className="flex items-center justify-between pb-3">
-                          <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                          <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                             Lançamentos desta Fatura ({cardTxs.length})
                           </span>
                           {!isPaid && card.currentInvoice.remainingAmount > 0 ? (
@@ -2078,15 +2421,15 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                               className="flex items-center justify-between py-2.5"
                             >
                               <div>
-                                <p className="font-medium text-slate-900">
+                                <p className="font-medium text-slate-900 dark:text-slate-100">
                                   {tx.description}
                                 </p>
-                                <p className="text-xs text-slate-600 tabular-nums">
+                                <p className="text-xs text-slate-600 dark:text-slate-400 tabular-nums">
                                   {formatDateBR(tx.date)} ·{" "}
                                   {tx.categoryName || "Sem categoria"}
                                 </p>
                               </div>
-                              <span className="font-bold text-slate-900 tabular-nums">
+                              <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                                 {formatBRL(tx.amount, hideBalances)}
                               </span>
                             </li>
@@ -2107,10 +2450,10 @@ export function MobillsApp({ initialData }: { initialData: any }) {
             <div className="space-y-6">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
                     Planejamento Orçamentário de {MONTH_NAMES[month - 1]}
                   </h2>
-                  <p className="text-sm text-slate-600">
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
                     Defina limites máximos de gastos por categoria e receba alertas preventivos ao atingir 80% da meta.
                   </p>
                 </div>
@@ -2134,40 +2477,40 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               </div>
 
               {/* Global Budget & Planned Balance (Mobills Planning Matrix) */}
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="border-b border-slate-200 pb-3 text-base font-bold text-slate-900">
+              <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
+                <h3 className="border-b border-slate-200 dark:border-slate-800 pb-3 text-base font-bold text-slate-900 dark:text-slate-100">
                   Matriz de Planejamento Financeiro de {MONTH_NAMES[month - 1]}
                 </h3>
                 <dl className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
                   <div>
-                    <dt className="text-xs font-semibold text-slate-700">
+                    <dt className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                       Receitas do Mês
                     </dt>
                     <dd className="mt-1 text-2xl font-bold text-emerald-700 tabular-nums">
                       {formatBRL(snapshot?.summary?.totalIncome, hideBalances)}
                     </dd>
-                    <p className="mt-1 text-[11px] text-slate-600">Entradas totais previstas</p>
+                    <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-400">Entradas totais previstas</p>
                   </div>
                   <div>
-                    <dt className="text-xs font-semibold text-slate-700">
+                    <dt className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                       Gastos Planejados (Orçamentos)
                     </dt>
-                    <dd className="mt-1 text-2xl font-bold text-slate-900 tabular-nums">
+                    <dd className="mt-1 text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                       {formatBRL(totalBudgetLimit, hideBalances)}
                     </dd>
-                    <p className="mt-1 text-[11px] text-slate-600">Teto definido para categorias</p>
+                    <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-400">Teto definido para categorias</p>
                   </div>
                   <div>
-                    <dt className="text-xs font-semibold text-slate-700">
+                    <dt className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                       Balanço Planejado (Meta de Economia)
                     </dt>
-                    <dd className="mt-1 text-2xl font-bold text-slate-900 tabular-nums">
+                    <dd className="mt-1 text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                       {formatBRL((snapshot?.summary?.totalIncome || 0) - totalBudgetLimit, hideBalances)}
                     </dd>
-                    <p className="mt-1 text-[11px] text-slate-600">Receitas menos tetos planejados</p>
+                    <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-400">Receitas menos tetos planejados</p>
                   </div>
                   <div>
-                    <dt className="text-xs font-semibold text-slate-700">
+                    <dt className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                       Balanço Realizado no Momento
                     </dt>
                     <dd
@@ -2177,7 +2520,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                     >
                       {formatBRL(snapshot?.summary?.monthlySavings, hideBalances)}
                     </dd>
-                    <p className="mt-1 text-[11px] text-slate-600">Economia real conquistada até agora</p>
+                    <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-400">Economia real conquistada até agora</p>
                   </div>
                 </dl>
               </section>
@@ -2206,11 +2549,11 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   return (
                     <section
                       key={b.id}
-                      className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+                      className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <h3 className="text-base font-bold text-slate-900">
+                          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
                             {b.categoryName}
                           </h3>
                           <span
@@ -2236,21 +2579,21 @@ export function MobillsApp({ initialData }: { initialData: any }) {
 
                       <div className="mt-4 space-y-2">
                         <div className="flex justify-between text-sm tabular-nums">
-                          <span className="font-medium text-slate-700">
+                          <span className="font-medium text-slate-700 dark:text-slate-300">
                             Gasto:{" "}
-                            <strong className="text-slate-900">
+                            <strong className="text-slate-900 dark:text-slate-100">
                               {formatBRL(b.spentAmount, hideBalances)}
                             </strong>
                           </span>
-                          <span className="font-medium text-slate-700">
+                          <span className="font-medium text-slate-700 dark:text-slate-300">
                             Meta:{" "}
-                            <strong className="text-slate-900">
+                            <strong className="text-slate-900 dark:text-slate-100">
                               {formatBRL(b.amountLimit, hideBalances)}
                             </strong>{" "}
                             ({b.percentage}%)
                           </span>
                         </div>
-                        <div className="h-3 w-full overflow-hidden rounded-full bg-slate-100">
+                        <div className="h-3 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                           <div
                             className={`h-full rounded-full ${statusBadge.bar}`}
                             style={{
@@ -2258,7 +2601,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                             }}
                           />
                         </div>
-                        <p className="text-xs font-medium text-slate-600 tabular-nums">
+                        <p className="text-xs font-medium text-slate-600 dark:text-slate-400 tabular-nums">
                           {b.remainingAmount >= 0
                             ? `Restam ${formatBRL(
                                 b.remainingAmount,
@@ -2284,10 +2627,10 @@ export function MobillsApp({ initialData }: { initialData: any }) {
             <div className="space-y-6">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
                     Objetivos e Metas de Economia
                   </h2>
-                  <p className="text-sm text-slate-600">
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
                     Planeje grandes conquistas, registre depósitos periódicos e acompanhe o aporte mensal recomendado.
                   </p>
                 </div>
@@ -2305,7 +2648,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 {(snapshot?.goals || []).map((g: any) => (
                   <section
                     key={g.id}
-                    className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+                    className="flex flex-col justify-between rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm"
                   >
                     <div>
                       <div className="flex items-start justify-between gap-3">
@@ -2317,10 +2660,10 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                             <Target className="h-5 w-5" />
                           </div>
                           <div>
-                            <h3 className="text-base font-bold text-slate-900">
+                            <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
                               {g.name}
                             </h3>
-                            <p className="text-xs text-slate-600 tabular-nums">
+                            <p className="text-xs text-slate-600 dark:text-slate-400 tabular-nums">
                               Prazo alvo: {formatDateBR(g.deadline)}
                             </p>
                           </div>
@@ -2342,15 +2685,15 @@ export function MobillsApp({ initialData }: { initialData: any }) {
 
                       <div className="mt-5 space-y-2">
                         <div className="flex items-baseline justify-between tabular-nums">
-                          <span className="text-xl font-bold text-slate-900">
+                          <span className="text-xl font-bold text-slate-900 dark:text-slate-100">
                             {formatBRL(g.currentAmount, hideBalances)}
                           </span>
-                          <span className="text-xs font-semibold text-slate-600">
+                          <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
                             de {formatBRL(g.targetAmount, hideBalances)} (
                             {g.percentage}%)
                           </span>
                         </div>
-                        <div className="h-3 w-full overflow-hidden rounded-full bg-slate-100">
+                        <div className="h-3 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                           <div
                             className="h-full rounded-full"
                             style={{
@@ -2359,7 +2702,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                             }}
                           />
                         </div>
-                        <p className="text-xs font-medium text-slate-700 tabular-nums">
+                        <p className="text-xs font-medium text-slate-700 dark:text-slate-300 tabular-nums">
                           Faltam {formatBRL(g.remainingAmount, hideBalances)} · Aporte
                           sugerido:{" "}
                           <strong>
@@ -2369,8 +2712,8 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                       </div>
 
                       {/* Recent Deposits */}
-                      <div className="mt-5 border-t border-slate-200 pt-3">
-                        <p className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                      <div className="mt-5 border-t border-slate-200 dark:border-slate-800 pt-3">
+                        <p className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                           Últimos Aportes ({g.deposits.length})
                         </p>
                         <ul className="mt-2 divide-y divide-slate-100 text-xs">
@@ -2379,7 +2722,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                               key={dep.id}
                               className="flex items-center justify-between py-1.5"
                             >
-                              <span className="text-slate-700">
+                              <span className="text-slate-700 dark:text-slate-300">
                                 {formatDateBR(dep.date)} ·{" "}
                                 {dep.note || "Aporte"}
                               </span>
@@ -2423,10 +2766,10 @@ export function MobillsApp({ initialData }: { initialData: any }) {
             <div className="space-y-8">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
                     Categorias, Subcategorias e Tags
                   </h2>
-                  <p className="text-sm text-slate-600">
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
                     Organize seus gastos em árvore hierárquica (Categoria › Subcategoria) e crie tags transversais.
                   </p>
                 </div>
@@ -2442,11 +2785,11 @@ export function MobillsApp({ initialData }: { initialData: any }) {
 
               <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
                 {/* Expense & Income Categories */}
-                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <h3 className="border-b border-slate-200 pb-3 text-base font-bold text-slate-900">
+                <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
+                  <h3 className="border-b border-slate-200 dark:border-slate-800 pb-3 text-base font-bold text-slate-900 dark:text-slate-100">
                     Árvore de Categorias e Movimentação no Mês
                   </h3>
-                  <ul className="divide-y divide-slate-200 text-sm">
+                  <ul className="divide-y divide-slate-200 dark:divide-slate-800 text-sm">
                     {(snapshot?.categories || []).map((c: any) => (
                       <li
                         key={c.id}
@@ -2462,8 +2805,8 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                           <span
                             className={
                               c.parentId
-                                ? "font-medium text-slate-700"
-                                : "font-bold text-slate-900"
+                                ? "font-medium text-slate-700 dark:text-slate-300"
+                                : "font-bold text-slate-900 dark:text-slate-100"
                             }
                           >
                             {c.parentName ? `${c.parentName} › ${c.name}` : c.name}
@@ -2472,14 +2815,14 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                             className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${
                               c.type === "income"
                                 ? "bg-emerald-50 text-emerald-900"
-                                : "bg-slate-100 text-slate-700"
+                                : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
                             }`}
                           >
                             {c.type === "income" ? "Receita" : "Despesa"}
                           </span>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className="font-bold text-slate-900 tabular-nums">
+                          <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                             {formatBRL(c.spentInMonth, hideBalances)}
                           </span>
                           <button
@@ -2502,8 +2845,8 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 </section>
 
                 {/* Tags Manager */}
-                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <h3 className="border-b border-slate-200 pb-3 text-base font-bold text-slate-900">
+                <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
+                  <h3 className="border-b border-slate-200 dark:border-slate-800 pb-3 text-base font-bold text-slate-900 dark:text-slate-100">
                     Tags Personalizadas
                   </h3>
                   <form
@@ -2528,7 +2871,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                       onChange={(e) => setTagNameInput(e.target.value)}
                       placeholder="Nova tag (ex: viagem2027, reembolso)"
                       aria-label="Nome da nova tag"
-                      className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                      className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
                     />
                     <button
                       type="submit"
@@ -2538,22 +2881,22 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                     </button>
                   </form>
 
-                  <ul className="mt-5 divide-y divide-slate-200 text-sm">
+                  <ul className="mt-5 divide-y divide-slate-200 dark:divide-slate-800 text-sm">
                     {(snapshot?.tags || []).map((t: any) => (
                       <li
                         key={t.id}
                         className="flex items-center justify-between py-3"
                       >
                         <div>
-                          <span className="rounded-md bg-slate-100 px-2.5 py-1 font-semibold text-slate-900">
+                          <span className="rounded-md bg-slate-100 dark:bg-slate-800 px-2.5 py-1 font-semibold text-slate-900 dark:text-slate-100">
                             #{t.name}
                           </span>
-                          <span className="ml-2 text-xs text-slate-600 tabular-nums">
+                          <span className="ml-2 text-xs text-slate-600 dark:text-slate-400 tabular-nums">
                             ({t.countInMonth} lançamentos no mês)
                           </span>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className="font-bold text-slate-900 tabular-nums">
+                          <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                             {formatBRL(t.amountInMonth, hideBalances)}
                           </span>
                           <button
@@ -2585,10 +2928,10 @@ export function MobillsApp({ initialData }: { initialData: any }) {
             <div className="space-y-8">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
                     Relatórios de Fluxo de Caixa e Importação de Extratos
                   </h2>
-                  <p className="text-sm text-slate-600">
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
                     Compare a evolução dos últimos 6 meses e importe/exporte planilhas CSV ou arquivos bancários OFX.
                   </p>
                 </div>
@@ -2596,7 +2939,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   <button
                     type="button"
                     onClick={() => window.print()}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100 dark:bg-slate-800"
                   >
                     <Printer className="h-4 w-4" />
                     <span>Imprimir / Salvar PDF</span>
@@ -2613,11 +2956,11 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               </div>
 
               {/* 6-Month Cash Flow Evolution */}
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-base font-bold text-slate-900">
+              <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
                   Evolução do Fluxo de Caixa Semestral (Receitas vs. Despesas)
                 </h3>
-                <p className="mt-1 text-xs text-slate-600">
+                <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
                   Histórico consolidado dos últimos 6 meses encerrando em{" "}
                   {MONTH_NAMES[month - 1]}/{year}.
                 </p>
@@ -2638,11 +2981,11 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                         key={item.label}
                         className="flex flex-col justify-between rounded-xl border border-slate-200 p-3.5"
                       >
-                        <div className="text-xs font-bold text-slate-900">
+                        <div className="text-xs font-bold text-slate-900 dark:text-slate-100">
                           {item.label}
                         </div>
 
-                        <div className="my-4 flex h-32 items-end justify-center gap-3 border-b border-slate-200 pb-2">
+                        <div className="my-4 flex h-32 items-end justify-center gap-3 border-b border-slate-200 dark:border-slate-800 pb-2">
                           <div className="flex h-full w-6 flex-col justify-end">
                             <div
                               className="w-full rounded-t bg-emerald-600"
@@ -2666,7 +3009,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                           <p className="font-semibold text-red-700">
                             -{formatBRL(item.expenses, hideBalances)}
                           </p>
-                          <p className="border-t border-slate-100 pt-1 font-bold text-slate-900">
+                          <p className="border-t border-slate-100 pt-1 font-bold text-slate-900 dark:text-slate-100">
                             = {formatBRL(item.balance, hideBalances)}
                           </p>
                         </div>
@@ -2677,20 +3020,20 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               </section>
 
               {/* Import CSV / OFX Tool */}
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
+              <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
                   <div>
-                    <h3 className="text-base font-bold text-slate-900">
+                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
                       Importador Rápido de Extratos Bancários (CSV / OFX)
                     </h3>
-                    <p className="text-xs text-slate-600">
+                    <p className="text-xs text-slate-600 dark:text-slate-400">
                       Cole linhas no formato <code>AAAA-MM-DD;Descrição;Valor</code> (valores negativos geram despesas e positivos geram receitas).
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={loadSampleCSVIntoImporter}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100 dark:bg-slate-800"
                   >
                     <FileSpreadsheet className="h-4 w-4" />
                     <span>Preencher Exemplo de Extrato</span>
@@ -2701,7 +3044,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   <div>
                     <label
                       htmlFor="import-account"
-                      className="block text-xs font-semibold text-slate-700"
+                      className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
                     >
                       Conta Bancária de Destino
                     </label>
@@ -2709,7 +3052,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                       id="import-account"
                       value={importAccountId}
                       onChange={(e) => setImportAccountId(e.target.value)}
-                      className="mt-1 w-full max-w-xs rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                      className="mt-1 w-full max-w-xs rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
                     >
                       {(snapshot?.accounts || []).map((a: any) => (
                         <option key={a.id} value={a.id}>
@@ -2722,7 +3065,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   <div>
                     <label
                       htmlFor="import-textarea"
-                      className="block text-xs font-semibold text-slate-700"
+                      className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
                     >
                       Linhas do Extrato (CSV ponto-e-vírgula ou vírgula)
                     </label>
@@ -2732,7 +3075,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                       value={importText}
                       onChange={(e) => setImportText(e.target.value)}
                       placeholder="2026-10-18;Supermercado Zona Sul;-289.50"
-                      className="mt-1 w-full rounded-xl border border-slate-300 p-3 font-mono text-xs text-slate-900"
+                      className="mt-1 w-full rounded-xl border border-slate-300 p-3 font-mono text-xs text-slate-900 dark:text-slate-100"
                     />
                   </div>
 
@@ -2757,10 +3100,10 @@ export function MobillsApp({ initialData }: { initialData: any }) {
             <div className="space-y-8">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
                     Assistente Inteligente Mobills IA
                   </h2>
-                  <p className="text-sm text-slate-600">
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
                     Diagnóstico algorítmico da sua saúde financeira baseado na regra 50/30/20, faturas e fluxo de caixa.
                   </p>
                 </div>
@@ -2771,13 +3114,13 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               </div>
 
               {/* Health Score Card */}
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-6">
                   <div>
-                    <h3 className="text-base font-bold text-slate-900">
+                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
                       Score de Saúde Financeira
                     </h3>
-                    <p className="mt-1 text-sm text-slate-600">
+                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
                       Calculado pela taxa de poupança, compromissos em dia e adequação aos tetos de orçamento.
                     </p>
                     <div className="mt-4 flex items-center gap-3">
@@ -2788,7 +3131,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                         <p className="text-sm font-bold text-emerald-800">
                           Excelente Disciplina Financeira
                         </p>
-                        <p className="text-xs text-slate-600">
+                        <p className="text-xs text-slate-600 dark:text-slate-400">
                           Você poupou {snapshot?.summary?.savingsRate || 0}% de suas receitas na competência de {MONTH_NAMES[month - 1]}.
                         </p>
                       </div>
@@ -2798,23 +3141,23 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               </section>
 
               {/* 50 / 30 / 20 Framework Audit */}
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-base font-bold text-slate-900">
+              <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
                   Diagnóstico pela Regra 50 / 30 / 20
                 </h3>
-                <p className="mt-1 text-xs text-slate-600">
+                <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
                   Estrutura recomendada de alocação de receitas para estabilidade e crescimento financeiro.
                 </p>
 
                 <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-3">
                   <div className="rounded-xl border border-slate-200 p-4">
                     <div className="flex justify-between text-sm">
-                      <span className="font-bold text-slate-900">1. Necessidades</span>
-                      <span className="font-bold text-slate-700">Meta: 50%</span>
+                      <span className="font-bold text-slate-900 dark:text-slate-100">1. Necessidades</span>
+                      <span className="font-bold text-slate-700 dark:text-slate-300">Meta: 50%</span>
                     </div>
-                    <p className="mt-1 text-xs text-slate-600">Moradia, Supermercado, Saúde e Transporte.</p>
-                    <div className="mt-3 text-lg font-bold text-slate-900 tabular-nums">46.5%</div>
-                    <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">Moradia, Supermercado, Saúde e Transporte.</p>
+                    <div className="mt-3 text-lg font-bold text-slate-900 dark:text-slate-100 tabular-nums">46.5%</div>
+                    <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                       <div className="h-full rounded-full bg-blue-600" style={{ width: "46.5%" }} />
                     </div>
                     <p className="mt-2 text-xs font-semibold text-emerald-800">Dentro da meta saudável.</p>
@@ -2822,12 +3165,12 @@ export function MobillsApp({ initialData }: { initialData: any }) {
 
                   <div className="rounded-xl border border-slate-200 p-4">
                     <div className="flex justify-between text-sm">
-                      <span className="font-bold text-slate-900">2. Desejos & Lazer</span>
-                      <span className="font-bold text-slate-700">Meta: 30%</span>
+                      <span className="font-bold text-slate-900 dark:text-slate-100">2. Desejos & Lazer</span>
+                      <span className="font-bold text-slate-700 dark:text-slate-300">Meta: 30%</span>
                     </div>
-                    <p className="mt-1 text-xs text-slate-600">Restaurantes, Streaming, Lazer e Compras.</p>
-                    <div className="mt-3 text-lg font-bold text-slate-900 tabular-nums">18.2%</div>
-                    <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">Restaurantes, Streaming, Lazer e Compras.</p>
+                    <div className="mt-3 text-lg font-bold text-slate-900 dark:text-slate-100 tabular-nums">18.2%</div>
+                    <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                       <div className="h-full rounded-full bg-purple-600" style={{ width: "18.2%" }} />
                     </div>
                     <p className="mt-2 text-xs font-semibold text-emerald-800">Excelente contenção de supérfluos.</p>
@@ -2835,12 +3178,12 @@ export function MobillsApp({ initialData }: { initialData: any }) {
 
                   <div className="rounded-xl border border-slate-200 p-4">
                     <div className="flex justify-between text-sm">
-                      <span className="font-bold text-slate-900">3. Reserva & Metas</span>
-                      <span className="font-bold text-slate-700">Meta: 20%</span>
+                      <span className="font-bold text-slate-900 dark:text-slate-100">3. Reserva & Metas</span>
+                      <span className="font-bold text-slate-700 dark:text-slate-300">Meta: 20%</span>
                     </div>
-                    <p className="mt-1 text-xs text-slate-600">Aportes em CDB, Poupança e Metas de longo prazo.</p>
-                    <div className="mt-3 text-lg font-bold text-slate-900 tabular-nums">35.3%</div>
-                    <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">Aportes em CDB, Poupança e Metas de longo prazo.</p>
+                    <div className="mt-3 text-lg font-bold text-slate-900 dark:text-slate-100 tabular-nums">35.3%</div>
+                    <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                       <div className="h-full rounded-full bg-emerald-600" style={{ width: "35.3%" }} />
                     </div>
                     <p className="mt-2 text-xs font-semibold text-emerald-800">Superando a meta de economia!</p>
@@ -2849,16 +3192,16 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               </section>
 
               {/* Smart Recommendations */}
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-base font-bold text-slate-900">
+              <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
                   Insights & Recomendações Acionáveis para {MONTH_NAMES[month - 1]}
                 </h3>
                 <ul className="mt-4 space-y-3">
                   <li className="flex items-start gap-3 rounded-xl border border-slate-200 p-4">
                     <BadgeCheck className="h-5 w-5 shrink-0 text-emerald-700" />
                     <div>
-                      <h4 className="text-sm font-bold text-slate-900">Comprometimento de Cartão de Crédito Seguro</h4>
-                      <p className="mt-0.5 text-xs text-slate-600">
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Comprometimento de Cartão de Crédito Seguro</h4>
+                      <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
                         O total das suas faturas atuais ({formatBRL(snapshot?.summary?.expenseCardTotal, hideBalances)}) representa menos de 25% da sua receita líquida mensal ({formatBRL(snapshot?.summary?.totalIncome, hideBalances)}), evitando riscos com rotativo.
                       </p>
                     </div>
@@ -2866,8 +3209,8 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   <li className="flex items-start gap-3 rounded-xl border border-slate-200 p-4">
                     <AlertTriangle className="h-5 w-5 shrink-0 text-amber-700" />
                     <div>
-                      <h4 className="text-sm font-bold text-slate-900">Atenção ao Orçamento de Alimentação</h4>
-                      <p className="mt-0.5 text-xs text-slate-600">
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Atenção ao Orçamento de Alimentação</h4>
+                      <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
                         A categoria de Alimentação ultrapassou a meta definida. Considere redistribuir R$ 250,00 de categorias com folga para fechar o mês equilibrado.
                       </p>
                     </div>
@@ -2875,8 +3218,8 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   <li className="flex items-start gap-3 rounded-xl border border-slate-200 p-4">
                     <Target className="h-5 w-5 shrink-0 text-blue-700" />
                     <div>
-                      <h4 className="text-sm font-bold text-slate-900">Aceleração de Objetivos</h4>
-                      <p className="mt-0.5 text-xs text-slate-600">
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Aceleração de Objetivos</h4>
+                      <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
                         Sua Reserva de Emergência já superou 60% do montante planejado. No ritmo atual, você atingirá a meta 2 meses antes do prazo previsto!
                       </p>
                     </div>
@@ -2944,7 +3287,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 className={`rounded-lg border px-3 py-2 text-xs font-bold transition-colors ${
                   txForm.type === tab.id
                     ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-300 bg-white text-slate-800 hover:bg-slate-100"
+                    : "border-slate-300 bg-white text-slate-800 hover:bg-slate-100 dark:bg-slate-800"
                 }`}
               >
                 {tab.label}
@@ -2973,7 +3316,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   setTxForm({ ...txForm, description: e.target.value })
                 }
                 aria-describedby="tx-desc-hint"
-                className="mwg-input w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                className="mwg-input w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
               />
               <div className="mwg-error-msg">
                 Informe uma descrição com pelo menos 2 caracteres.
@@ -2994,7 +3337,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 value={txForm.payee}
                 onChange={(e) => setTxForm({ ...txForm, payee: e.target.value })}
                 placeholder="Ex: Pão de Açúcar, Netflix, Empregador"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
               />
             </div>
           </div>
@@ -3017,7 +3360,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                         const cur = Number(txForm.amount || 0);
                         setTxForm({ ...txForm, amount: (cur + step).toFixed(2) });
                       }}
-                      className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-200"
+                      className="rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[11px] font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200"
                     >
                       +{step}
                     </button>
@@ -3038,7 +3381,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   setTxForm({ ...txForm, amount: e.target.value })
                 }
                 aria-describedby="tx-amount-hint"
-                className="mwg-input w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 tabular-nums"
+                className="mwg-input w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums"
               />
               <div className="mwg-error-msg">
                 Insira um valor numérico maior que zero.
@@ -3059,7 +3402,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 required
                 value={txForm.date}
                 onChange={(e) => setTxForm({ ...txForm, date: e.target.value })}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 tabular-nums"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums"
               />
             </div>
           </div>
@@ -3080,7 +3423,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   onChange={(e) =>
                     setTxForm({ ...txForm, creditCardId: e.target.value })
                   }
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
                 >
                   {(snapshot?.creditCards || []).map((c: any) => (
                     <option key={c.id} value={c.id}>
@@ -3103,7 +3446,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   onChange={(e) =>
                     setTxForm({ ...txForm, installments: e.target.value })
                   }
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 tabular-nums"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums"
                 >
                   {[1, 2, 3, 4, 5, 6, 8, 10, 12, 18, 24].map((n) => (
                     <option key={n} value={n}>
@@ -3128,7 +3471,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   onChange={(e) =>
                     setTxForm({ ...txForm, accountId: e.target.value })
                   }
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
                 >
                   {(snapshot?.accounts || []).map((a: any) => (
                     <option key={a.id} value={a.id}>
@@ -3153,7 +3496,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                       destinationAccountId: e.target.value,
                     })
                   }
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
                 >
                   {(snapshot?.accounts || []).map((a: any) => (
                     <option key={a.id} value={a.id}>
@@ -3178,7 +3521,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   onChange={(e) =>
                     setTxForm({ ...txForm, accountId: e.target.value })
                   }
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
                 >
                   {(snapshot?.accounts || []).map((a: any) => (
                     <option key={a.id} value={a.id}>
@@ -3200,7 +3543,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   onChange={(e) =>
                     setTxForm({ ...txForm, status: e.target.value as any })
                   }
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
                 >
                   <option value="completed">
                     Efetivado (Já foi pago / recebido)
@@ -3229,7 +3572,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   onChange={(e) =>
                     setTxForm({ ...txForm, categoryId: e.target.value })
                   }
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
                 >
                   {(snapshot?.categories || [])
                     .filter((c: any) =>
@@ -3260,7 +3603,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                     setTxForm({ ...txForm, tagsInput: e.target.value })
                   }
                   placeholder="essencial, familia, trabalho"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
                 />
               </div>
             </div>
@@ -3284,11 +3627,11 @@ export function MobillsApp({ initialData }: { initialData: any }) {
             </label>
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
+          <div className="flex justify-end gap-2 border-t border-slate-200 dark:border-slate-800 pt-4">
             <button
               type="button"
               onClick={() => setTxDialogOpen(false)}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100"
+              className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100 dark:bg-slate-800"
             >
               Cancelar
             </button>
@@ -3339,7 +3682,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               value={accForm.name}
               onChange={(e) => setAccForm({ ...accForm, name: e.target.value })}
               placeholder="Ex: Conta Santander Select"
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
             />
           </div>
 
@@ -3357,7 +3700,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 onChange={(e) =>
                   setAccForm({ ...accForm, institution: e.target.value })
                 }
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
               >
                 <option value="Nubank">Nubank</option>
                 <option value="Itaú">Itaú Unibanco</option>
@@ -3387,12 +3730,12 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 onChange={(e) =>
                   setAccForm({ ...accForm, initialBalance: e.target.value })
                 }
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 tabular-nums"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums"
               />
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
+          <div className="flex justify-end gap-2 border-t border-slate-200 dark:border-slate-800 pt-4">
             <button
               type="button"
               onClick={() => setAccountDialogOpen(false)}
@@ -3436,7 +3779,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
           }}
           className="space-y-4"
         >
-          <p className="text-xs text-slate-700">
+          <p className="text-xs text-slate-700 dark:text-slate-300">
             Saldo atual registrado:{" "}
             <strong className="tabular-nums">
               {formatBRL(readjustDialog.currentBalance)}
@@ -3457,10 +3800,10 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               required
               value={newBalanceInput}
               onChange={(e) => setNewBalanceInput(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 tabular-nums"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums"
             />
           </div>
-          <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
+          <div className="flex justify-end gap-2 border-t border-slate-200 dark:border-slate-800 pt-4">
             <button
               type="button"
               onClick={() =>
@@ -3521,7 +3864,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 setCardForm({ ...cardForm, name: e.target.value })
               }
               placeholder="Ex: XP Visa Infinite"
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
             />
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -3541,7 +3884,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 onChange={(e) =>
                   setCardForm({ ...cardForm, limitAmount: e.target.value })
                 }
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 tabular-nums"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums"
               />
             </div>
             <div>
@@ -3561,7 +3904,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 onChange={(e) =>
                   setCardForm({ ...cardForm, closingDay: e.target.value })
                 }
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 tabular-nums"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums"
               />
             </div>
             <div>
@@ -3581,11 +3924,11 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 onChange={(e) =>
                   setCardForm({ ...cardForm, dueDay: e.target.value })
                 }
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 tabular-nums"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums"
               />
             </div>
           </div>
-          <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
+          <div className="flex justify-end gap-2 border-t border-slate-200 dark:border-slate-800 pt-4">
             <button
               type="button"
               onClick={() => setCardDialogOpen(false)}
@@ -3645,7 +3988,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               required
               value={payInvoiceAmount}
               onChange={(e) => setPayInvoiceAmount(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 tabular-nums"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums"
             />
           </div>
           <div>
@@ -3659,7 +4002,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               id="pay-inv-acc"
               value={payInvoiceAccountId}
               onChange={(e) => setPayInvoiceAccountId(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
             >
               {(snapshot?.accounts || []).map((a: any) => (
                 <option key={a.id} value={a.id}>
@@ -3668,7 +4011,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               ))}
             </select>
           </div>
-          <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
+          <div className="flex justify-end gap-2 border-t border-slate-200 dark:border-slate-800 pt-4">
             <button
               type="button"
               onClick={() =>
@@ -3724,7 +4067,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               onChange={(e) =>
                 setBudgetForm({ ...budgetForm, categoryId: e.target.value })
               }
-              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
             >
               {(snapshot?.categories || [])
                 .filter((c: any) => c.type === "expense")
@@ -3752,10 +4095,10 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               onChange={(e) =>
                 setBudgetForm({ ...budgetForm, amountLimit: e.target.value })
               }
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 tabular-nums"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums"
             />
           </div>
-          <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
+          <div className="flex justify-end gap-2 border-t border-slate-200 dark:border-slate-800 pt-4">
             <button
               type="button"
               onClick={() => setBudgetDialogOpen(false)}
@@ -3813,7 +4156,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 setGoalForm({ ...goalForm, name: e.target.value })
               }
               placeholder="Ex: Entrada Apartamento, Reserva 12 Meses"
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
             />
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -3834,7 +4177,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 onChange={(e) =>
                   setGoalForm({ ...goalForm, targetAmount: e.target.value })
                 }
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 tabular-nums"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums"
               />
             </div>
             <div>
@@ -3854,7 +4197,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 onChange={(e) =>
                   setGoalForm({ ...goalForm, initialAmount: e.target.value })
                 }
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 tabular-nums"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums"
               />
             </div>
             <div>
@@ -3872,11 +4215,11 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 onChange={(e) =>
                   setGoalForm({ ...goalForm, deadline: e.target.value })
                 }
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 tabular-nums"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums"
               />
             </div>
           </div>
-          <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
+          <div className="flex justify-end gap-2 border-t border-slate-200 dark:border-slate-800 pt-4">
             <button
               type="button"
               onClick={() => setGoalDialogOpen(false)}
@@ -3940,7 +4283,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                     amount: e.target.value,
                   })
                 }
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 tabular-nums"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums"
               />
             </div>
             <div>
@@ -3961,7 +4304,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                     date: e.target.value,
                   })
                 }
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 tabular-nums"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums"
               />
             </div>
           </div>
@@ -3979,10 +4322,10 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               onChange={(e) =>
                 setGoalDepositForm({ ...goalDepositForm, note: e.target.value })
               }
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
             />
           </div>
-          <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
+          <div className="flex justify-end gap-2 border-t border-slate-200 dark:border-slate-800 pt-4">
             <button
               type="button"
               onClick={() =>
@@ -4039,7 +4382,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               value={catForm.name}
               onChange={(e) => setCatForm({ ...catForm, name: e.target.value })}
               placeholder="Ex: Pets, Academia, Dividendos"
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
             />
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -4060,7 +4403,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                     parentId: "",
                   })
                 }
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
               >
                 <option value="expense">Despesa</option>
                 <option value="income">Receita</option>
@@ -4079,7 +4422,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 onChange={(e) =>
                   setCatForm({ ...catForm, parentId: e.target.value })
                 }
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
               >
                 <option value="">Nenhuma (Categoria Principal)</option>
                 {(snapshot?.categories || [])
@@ -4092,7 +4435,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               </select>
             </div>
           </div>
-          <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
+          <div className="flex justify-end gap-2 border-t border-slate-200 dark:border-slate-800 pt-4">
             <button
               type="button"
               onClick={() => setCategoryDialogOpen(false)}
@@ -4142,10 +4485,10 @@ export function MobillsApp({ initialData }: { initialData: any }) {
           </div>
 
           {authTab === "google" ? (
-            <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 dark:bg-slate-800/40 p-4">
               <div className="flex items-start gap-3">
                 <ShieldCheck className="h-5 w-5 shrink-0 text-emerald-700" />
-                <p className="text-xs leading-relaxed text-slate-700">
+                <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-300">
                   Autenticação integrada: vincule ou acesse seu perfil com um clique sem expor sua senha pessoal.
                 </p>
               </div>
@@ -4163,7 +4506,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   onChange={(e) =>
                     setAuthForm({ ...authForm, email: e.target.value })
                   }
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
                 />
               </div>
               <button
@@ -4219,7 +4562,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                     onChange={(e) =>
                       setAuthForm({ ...authForm, name: e.target.value })
                     }
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
                   />
                 </div>
               )}
@@ -4246,7 +4589,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                   }
                   aria-describedby={emailHintId}
                   aria-errormessage={emailErrorId}
-                  className="mwg-input w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  className="mwg-input w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
                 />
                 <div id={emailErrorId} className="mwg-error-msg">
                   Informe um endereço de e-mail válido.
@@ -4263,7 +4606,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                 </label>
                 <ul
                   id={passwordRulesId}
-                  className="mwg-rules-list mb-1.5 list-inside list-disc text-xs text-slate-600"
+                  className="mwg-rules-list mb-1.5 list-inside list-disc text-xs text-slate-600 dark:text-slate-400"
                 >
                   <li>Mínimo de 8 caracteres (Demo: Senha@123)</li>
                   <li>Pelo menos uma letra maiúscula, um número e um símbolo</li>
@@ -4282,14 +4625,14 @@ export function MobillsApp({ initialData }: { initialData: any }) {
                     setAuthForm({ ...authForm, password: e.target.value })
                   }
                   aria-describedby={passwordRulesId}
-                  className="mwg-input w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  className="mwg-input w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
                 />
                 <div className="mwg-error-msg">
                   A senha deve atender aos critérios listados acima.
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
+              <div className="flex justify-end gap-2 border-t border-slate-200 dark:border-slate-800 pt-4">
                 <button
                   type="button"
                   onClick={() => setAuthDialogOpen(false)}
@@ -4333,43 +4676,31 @@ export function MobillsApp({ initialData }: { initialData: any }) {
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <h4 className="text-xs font-bold text-slate-900">Escolha uma ação:</h4>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 dark:bg-slate-800/40 p-4">
+            <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100">Escolha uma ação:</h4>
             <div className="mt-3 flex flex-col gap-2.5">
               <button
                 type="button"
-                onClick={async () => {
-                  const ok = await postAction(
-                    { action: "reset_data", mode: "zero" },
-                    "Todos os dados foram zerados. Sua conta está limpa para uso real!"
-                  );
-                  if (ok) setResetDialogOpen(false);
-                }}
-                className="flex items-center justify-between rounded-xl border border-red-300 bg-white p-3.5 text-left transition hover:border-red-500 hover:bg-red-50/50"
+                onClick={() => handleSetMode("clean")}
+                className="flex items-center justify-between rounded-2xl border border-red-300 dark:border-red-800 bg-white dark:bg-slate-900 p-4 text-left transition hover:border-red-500 hover:bg-red-50/50 dark:hover:bg-red-950/20 shadow-sm"
               >
                 <div>
-                  <p className="text-xs font-bold text-red-900">Zerar Tudo (Início Limpo)</p>
-                  <p className="text-[11px] text-slate-600">Remove todas as contas, cartões, faturas e lançamentos de exemplo.</p>
+                  <p className="text-sm font-bold text-red-700 dark:text-red-400">🌱 Zerar Tudo (Começar no Modo Limpo)</p>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">Remove todas as contas e transações de teste para você cadastrar seus dados reais com total controle.</p>
                 </div>
-                <Trash2 className="h-4 w-4 shrink-0 text-red-700" />
+                <Trash2 className="h-5 w-5 shrink-0 text-red-600 dark:text-red-400 ml-3" />
               </button>
 
               <button
                 type="button"
-                onClick={async () => {
-                  const ok = await postAction(
-                    { action: "reset_data", mode: "demo" },
-                    "Dados de demonstração do Mobills restaurados com sucesso."
-                  );
-                  if (ok) setResetDialogOpen(false);
-                }}
-                className="flex items-center justify-between rounded-xl border border-slate-300 bg-white p-3.5 text-left transition hover:border-slate-500 hover:bg-slate-100/50"
+                onClick={() => handleSetMode("demo")}
+                className="flex items-center justify-between rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 text-left transition hover:border-slate-500 hover:bg-slate-100 dark:bg-slate-800/50 dark:hover:bg-slate-800/50 shadow-sm"
               >
                 <div>
-                  <p className="text-xs font-bold text-slate-900">Restaurar Dados de Exemplo (Demonstração)</p>
-                  <p className="text-[11px] text-slate-600">Recarrega contas, faturas e lançamentos de exemplo para testes.</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-slate-100">📊 Restaurar Dados de Demonstração</p>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">Recarrega contas (Nubank, Itaú), cartões, faturas e orçamentos simulados para você explorar as telas.</p>
                 </div>
-                <RotateCcw className="h-4 w-4 shrink-0 text-slate-700" />
+                <RotateCcw className="h-5 w-5 shrink-0 text-slate-700 dark:text-slate-300 ml-3" />
               </button>
             </div>
           </div>
@@ -4378,11 +4709,90 @@ export function MobillsApp({ initialData }: { initialData: any }) {
             <button
               type="button"
               onClick={() => setResetDialogOpen(false)}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+              className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:bg-slate-800"
             >
               Cancelar
             </button>
           </div>
+        </div>
+      </LightDismissDialog>
+
+      {/* =========================================================
+          DIALOG 12: ESCOLHA DO MODO INICIAL (PRIMEIRO ACESSO)
+         ========================================================= */}
+      <LightDismissDialog
+        open={welcomeModalOpen}
+        onClose={() => setWelcomeModalOpen(false)}
+        title="Bem-vindo ao Mobills Pro!"
+      >
+        <div className="space-y-5">
+          <div className="rounded-2xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/40 p-5">
+            <div className="flex items-start gap-3.5">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm">
+                <Sparkles className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                  Como você prefere iniciar seu controle?
+                </h3>
+                <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400 dark:text-slate-300">
+                  Você tem total liberdade para escolher entre uma tela 100% limpa para registrar suas finanças reais, ou carregar uma conta de demonstração completa com contas e despesas simuladas.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+            {/* Option 1: Clean Mode */}
+            <button
+              type="button"
+              onClick={() => handleSetMode("clean")}
+              className="flex flex-col justify-between rounded-2xl border-2 border-emerald-600 dark:border-emerald-500 bg-white dark:bg-slate-900 p-5 text-left shadow-sm transition hover:shadow-md hover:bg-emerald-50/30 dark:hover:bg-emerald-950/20"
+            >
+              <div>
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 px-2.5 py-1 text-xs font-bold text-emerald-800 dark:text-emerald-200">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Recomendado
+                </div>
+                <h4 className="mt-3 text-base font-bold text-slate-900 dark:text-slate-100">
+                  🌱 Começar do Zero (Modo Limpo)
+                </h4>
+                <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                  Sem contas ou lançamentos de teste. Tudo 100% zerado para você cadastrar seus bancos e cartões reais com precisão.
+                </p>
+              </div>
+              <div className="mt-4 inline-flex items-center text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                Iniciar Zerado →
+              </div>
+            </button>
+
+            {/* Option 2: Demo Mode */}
+            <button
+              type="button"
+              onClick={() => handleSetMode("demo")}
+              className="flex flex-col justify-between rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 text-left shadow-sm transition hover:shadow-md hover:border-slate-400 dark:hover:border-slate-600"
+            >
+              <div>
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800 dark:bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Para testes
+                </div>
+                <h4 className="mt-3 text-base font-bold text-slate-900 dark:text-slate-100">
+                  📊 Explorar com Demonstração
+                </h4>
+                <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                  Carrega contas fictícias (Nubank, Itaú), cartões, orçamentos e faturas para você experimentar todos os relatórios.
+                </p>
+              </div>
+              <div className="mt-4 inline-flex items-center text-xs font-bold text-slate-700 dark:text-slate-300">
+                Carregar Demo →
+              </div>
+            </button>
+          </div>
+
+          <p className="text-center text-[11px] text-slate-500 dark:text-slate-400">
+            Você poderá alternar entre o Modo Limpo e o Modo Demonstração a qualquer momento pelo botão no topo da tela.
+          </p>
         </div>
       </LightDismissDialog>
 
@@ -4412,7 +4822,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
           }}
           className="space-y-4"
         >
-          <p className="text-xs leading-relaxed text-slate-700">
+          <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-300">
             Você está transferindo todos os lançamentos de <strong>{moveCatDialog.sourceCatName}</strong> para outra categoria:
           </p>
 
@@ -4424,7 +4834,7 @@ export function MobillsApp({ initialData }: { initialData: any }) {
               value={moveCatDialog.targetCatId}
               onChange={(e) => setMoveCatDialog({ ...moveCatDialog, targetCatId: e.target.value })}
               required
-              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
             >
               <option value="">Selecione a categoria de destino...</option>
               {(snapshot?.categories || [])
@@ -4437,11 +4847,11 @@ export function MobillsApp({ initialData }: { initialData: any }) {
             </select>
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-slate-200 pt-3">
+          <div className="flex justify-end gap-2 border-t border-slate-200 dark:border-slate-800 pt-3">
             <button
               type="button"
               onClick={() => setMoveCatDialog({ open: false, sourceCatId: "", sourceCatName: "", targetCatId: "" })}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+              className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:bg-slate-800"
             >
               Cancelar
             </button>

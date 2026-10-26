@@ -15,6 +15,36 @@
   --border-subtle: #e2e8f0;
 }
 
+.dark {
+  --surface-paper: #090d16;
+  --surface-elevated: #0f172a;
+  --ink-primary: #f8fafc;
+  --ink-secondary: #cbd5e1;
+  --ink-muted: #94a3b8;
+  --accent-emerald: #10b981;
+  --accent-crimson: #ef4444;
+  --accent-amber: #f59e0b;
+  --accent-indigo: #818cf8;
+  --border-subtle: #1e293b;
+}
+
+.dark ::selection {
+  background-color: #064e3b;
+  color: #a7f3d0;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #090d16;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
 html,
 body {
   background-color: var(--surface-paper);

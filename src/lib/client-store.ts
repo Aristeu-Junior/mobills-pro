@@ -1,4 +1,5 @@
-const STORAGE_KEY = "mobills_pro_store_v1";
+const STORAGE_KEY = "mobills_pro_store_v2";
+export const ONBOARDING_CHOICE_KEY = "mobills_pro_mode_choice_v2";
 
 function uid(prefix = "id"): string {
   return `${prefix}_${Math.random().toString(36).substring(2, 10)}`;
@@ -480,20 +481,28 @@ export function getInitialSeedData() {
   };
 }
 
+export function isStoreZeroed(store: any): boolean {
+  if (!store) return true;
+  const accountsCount = Array.isArray(store.accounts) ? store.accounts.length : 0;
+  const txCount = Array.isArray(store.transactions) ? store.transactions.length : 0;
+  const cardsCount = Array.isArray(store.creditCards) ? store.creditCards.length : 0;
+  return accountsCount === 0 && txCount === 0 && cardsCount === 0;
+}
+
 export function getClientStore() {
-  if (typeof window === "undefined") return getInitialSeedData();
+  if (typeof window === "undefined") return getCleanZeroedData();
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) {
-    const seed = getInitialSeedData();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
-    return seed;
+    const clean = getCleanZeroedData();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(clean));
+    return clean;
   }
   try {
     return JSON.parse(raw);
   } catch {
-    const seed = getInitialSeedData();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
-    return seed;
+    const clean = getCleanZeroedData();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(clean));
+    return clean;
   }
 }
 
@@ -506,12 +515,18 @@ export function saveClientStore(data: any) {
 export function clearToZero() {
   const zeroData = getCleanZeroedData();
   saveClientStore(zeroData);
+  if (typeof window !== "undefined") {
+    localStorage.setItem(ONBOARDING_CHOICE_KEY, "clean");
+  }
   return zeroData;
 }
 
 export function restoreDemo() {
   const demoData = getInitialSeedData();
   saveClientStore(demoData);
+  if (typeof window !== "undefined") {
+    localStorage.setItem(ONBOARDING_CHOICE_KEY, "demo");
+  }
   return demoData;
 }
 
